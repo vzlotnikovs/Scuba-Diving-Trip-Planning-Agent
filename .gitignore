@@ -1,0 +1,5 @@
+*.env
+*.log
+.venv/
+chroma_langchain_db/
+__pycache__/
