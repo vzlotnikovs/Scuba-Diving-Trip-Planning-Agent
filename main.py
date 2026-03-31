@@ -1,6 +1,5 @@
 from dotenv import load_dotenv
 from pathlib import Path
-load_dotenv(dotenv_path=Path(__file__).parent / "keys.env")
 from typing import List, Optional, cast, Literal
 import streamlit as st
 import json
@@ -23,18 +22,20 @@ from constants import (
     SUMMARY_DISPLAY,
 )
 
-structlog.configure(                                                                    
-    processors=[                                                                        
-        structlog.stdlib.add_log_level,                                               
-        structlog.processors.TimeStamper(fmt="iso"),                                    
-        structlog.processors.JSONRenderer(),                                            
-    ],                                                                                  
-    wrapper_class=structlog.stdlib.BoundLogger,                                         
-    context_class=dict,                                                                 
-    logger_factory=structlog.PrintLoggerFactory(),                                      
-)                                                                                       
+load_dotenv(dotenv_path=Path(__file__).parent / "keys.env")
 
-log = structlog.get_logger()                                                            
+structlog.configure(
+    processors=[
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+)
+
+log = structlog.get_logger()
 
 
 def thread_id_generator() -> str:
@@ -108,10 +109,10 @@ def main() -> None:
         st.session_state.graph_config = {
             "configurable": {"thread_id": st.session_state.thread_id}
         }
-        log.info(                                                                        
-            "session_started",                                                          
-            thread_id=st.session_state.thread_id,                                      
-        )                                                                               
+        log.info(
+            "session_started",
+            thread_id=st.session_state.thread_id,
+        )
 
     with st.sidebar:
         st.markdown(SIDEBAR_TITLE)
@@ -158,10 +159,10 @@ def main() -> None:
                 )
 
         if st.button("💬 New Chat", type="secondary"):
-            log.info(                                                                    
-                "new_chat_started",                                                     
-                previous_thread_id=st.session_state.thread_id,                         
-            )                                                                           
+            log.info(
+                "new_chat_started",
+                previous_thread_id=st.session_state.thread_id,
+            )
             st.session_state.messages = []
             st.session_state.trip_summary = None
             st.session_state.certified = None
@@ -202,11 +203,11 @@ def main() -> None:
     )
 
     if prompt:
-        log.info(                                                                        
-            "user_message",                                                             
-            thread_id=st.session_state.thread_id,                                      
-            message_length=len(prompt),                                                 
-        )                                                                               
+        log.info(
+            "user_message",
+            thread_id=st.session_state.thread_id,
+            message_length=len(prompt),
+        )
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
@@ -247,16 +248,16 @@ def main() -> None:
                                 st.session_state.certified = certified
                             if workflow_complete:
                                 st.session_state.workflow_complete = True
-                                log.info(                                               
-                                    "workflow_complete",                                
-                                    thread_id=st.session_state.thread_id,              
-                                )                                                       
+                                log.info(
+                                    "workflow_complete",
+                                    thread_id=st.session_state.thread_id,
+                                )
                             st.rerun()
             except Exception:
-                log.exception(                                                          
-                    "agent_error",                                                      
-                    thread_id=st.session_state.thread_id,                              
-                )                                                                       
+                log.exception(
+                    "agent_error",
+                    thread_id=st.session_state.thread_id,
+                )
                 st.error("Something went wrong. Please try again.")
                 st.session_state.messages.append(
                     {

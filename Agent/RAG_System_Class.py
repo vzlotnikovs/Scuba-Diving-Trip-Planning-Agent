@@ -295,9 +295,7 @@ def retrieve_context(query: str) -> str:
         rag = RAGSystem.get_instance()
         if rag.vector_store is None:
             raise RuntimeError("vector_store must be initialized")
-        retrieved_sources = rag.vector_store.similarity_search(
-            query, k=rag.K_CONSTANT
-        )
+        retrieved_sources = rag.vector_store.similarity_search(query, k=rag.K_CONSTANT)
         log.info(
             "retrieve_context_complete",
             results_count=len(retrieved_sources),

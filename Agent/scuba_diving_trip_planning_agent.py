@@ -52,13 +52,14 @@ def response_and_summary_from_state(
 @tenacity.retry(
     wait=tenacity.wait_exponential(multiplier=1, min=2, max=10),
     stop=tenacity.stop_after_attempt(3),
-    reraise=True
+    reraise=True,
 )
 @sleep_and_retry
 @limits(calls=10, period=60)
 def invoke_graph(input_state: dict, config: RunnableConfig) -> dict:
     """Invoke the graph synchronously and return the final state."""
     return react_graph.invoke(input_state, config=config)
+
 
 def scuba_diving_trip_planning_agent(
     history: List[Dict[str, str]],
@@ -90,7 +91,7 @@ def scuba_diving_trip_planning_agent(
             - ("trip_summary", summary_dict): The current extracted trip details.
             - ("done", response, trip_summary, certified, workflow_complete): The final outcome.
     """
-    thread_id = config.get("configurable", {}).get("thread_id", "unknown")             # NEW
+    thread_id = config.get("configurable", {}).get("thread_id", "unknown")  # NEW
 
     input_state: Dict[str, Any] = {
         "messages": [
@@ -145,7 +146,7 @@ def scuba_diving_trip_planning_agent(
         for node_name, update in data.items():
             if node_name == "router" and isinstance(update, dict):
                 if update.get("next_node") == "update_trip_summary":
-                    log.info("agent_all_info_collected", thread_id=thread_id)          # NEW
+                    log.info("agent_all_info_collected", thread_id=thread_id)  # NEW
                     yield ("status", STATUS_ALL_COLLECTED)
             elif node_name == "update_trip_summary" and isinstance(update, dict):
                 if "trip_summary" in update:

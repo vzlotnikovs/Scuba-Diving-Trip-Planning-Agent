@@ -40,6 +40,7 @@ _tavily = TavilySearch(
     max_results=TAVILY_SEARCH_MAX_RESULTS,
     include_answer=TAVILY_SEARCH_INCLUDE_ANSWER,
     search_depth=TAVILY_SEARCH_SEARCH_DEPTH,
+    temperature=TAVILY_SEARCH_TEMPERATURE,
 )
 
 
@@ -149,12 +150,12 @@ def collect_info(state: AgentState) -> dict[str, Any]:
         tokens = cb.total_tokens
         cost = cb.total_cost
 
-    updates: dict[str, Any] = {
-        k: v for k, v in extracted.items() if v is not None
-    }
+    updates: dict[str, Any] = {k: v for k, v in extracted.items() if v is not None}
 
     if any(updates.get(k) != state.get(k) for k in updates if state.get(k) is not None):
-        updates["messages"] = [AIMessage(content="Got it — I've updated your trip details.")]
+        updates["messages"] = [
+            AIMessage(content="Got it — I've updated your trip details.")
+        ]
 
     updates["total_tokens"] = (state.get("total_tokens") or 0) + tokens
     updates["total_cost"] = (state.get("total_cost") or 0.0) + cost
@@ -332,7 +333,7 @@ def plan_trip(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
                 cost=cb.total_cost,
                 cumulative_tokens=new_tokens,
                 cumulative_cost=new_cost,
-            )                                                                           # NEW
+            )  # NEW
 
         trip_header = (
             f"{SUMMARY_DISPLAY['destination'][0]} **{destination}** | "
