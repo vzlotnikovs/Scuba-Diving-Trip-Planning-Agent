@@ -6,6 +6,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+from langgraph.types import interrupt
 from langchain_community.callbacks import get_openai_callback
 from langchain_core.runnables.config import RunnableConfig
 from langchain_tavily import TavilySearch
@@ -56,6 +57,7 @@ class AgentState(TypedDict, total=False):
     - next_node: string - internal: "plan_trip", "collect_info", or None → END
     - sanitized_content: string - set by "validate_input"
     - trip_summary: dict - set by update_trip_summary node when all required info collected (for UI)
+    - awaiting_user_feedback: boolean - set to True when waiting for user feedback on the safety-validated itinerary
     """
 
     messages: Annotated[list[AnyMessage], add_messages]
@@ -68,7 +70,7 @@ class AgentState(TypedDict, total=False):
     next_node: Optional[str]
     sanitized_content: Optional[str]
     trip_summary: Optional[Dict[str, Any]]
-    workflow_complete: Optional[bool]
+    awaiting_user_feedback: Optional[bool]
     total_tokens: Optional[int]
     total_cost: Optional[float]
 
@@ -378,9 +380,8 @@ def RAG_check_trip(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
         config (RunnableConfig): Configuration parameters for the run.
 
     Returns:
-        Dict[str, Any]: State updates containing the final, safety-validated
-            itinerary message and the `workflow_complete` flag, along with
-            final cumulative token usage and costs.
+        Dict[str, Any]: State updates containing the safety-validated
+            itinerary message, along with cumulative token usage and costs.
     """
     try:
         all_messages = state.get("messages") or []
@@ -454,7 +455,7 @@ def RAG_check_trip(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
                     )
                 ),
             ],
-            "workflow_complete": True,
+            "awaiting_user_feedback": True,
             "total_tokens": new_tokens,
             "total_cost": new_cost,
         }
@@ -467,9 +468,34 @@ def RAG_check_trip(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
                 ),
                 AIMessage(content=("Safety validation could not be completed.")),
             ],
-            "workflow_complete": True,
+            "awaiting_user_feedback": True,
         }
 
+def handle_user_feedback(state: AgentState) -> dict:
+    """Pause for feedback, then decide next step."""
+    user_feedback = interrupt({
+        "message": "Does this itinerary meet your expectations? Reply to modify or re-check."
+    })
+
+    text = str(user_feedback).lower()
+
+    if "change" in text or "adjust" in text:
+        return {
+            "next_node": "plan_trip",
+            "awaiting_user_feedback": False,
+        }
+    
+    if "recheck" in text:
+        return {
+            "next_node": "RAG_check_trip",
+            "awaiting_user_feedback": False,
+        }
+
+    return {
+        "messages": [HumanMessage(content=user_feedback)],
+        "next_node": END,
+        "awaiting_user_feedback": False,
+    }
 
 builder = StateGraph(AgentState)
 
@@ -479,6 +505,7 @@ builder.add_node("router", router)
 builder.add_node("update_trip_summary", update_trip_summary)
 builder.add_node("plan_trip", plan_trip)
 builder.add_node("RAG_check_trip", RAG_check_trip)
+builder.add_node("handle_user_feedback", handle_user_feedback)
 
 builder.add_edge(START, "validate_input")
 builder.add_conditional_edges(
@@ -496,7 +523,16 @@ builder.add_conditional_edges(
 )
 builder.add_edge("update_trip_summary", "plan_trip")
 builder.add_edge("plan_trip", "RAG_check_trip")
-builder.add_edge("RAG_check_trip", END)
+builder.add_edge("RAG_check_trip", "handle_user_feedback")
+builder.add_conditional_edges(
+    "handle_user_feedback",
+    lambda state: state.get("next_node") or END,
+    {
+        "plan_trip": "plan_trip",
+        "RAG_check_trip": "RAG_check_trip",
+        END: END
+    },
+)
 
 memory = MemorySaver()
 react_graph = builder.compile(checkpointer=memory)

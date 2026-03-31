@@ -101,8 +101,8 @@ def main() -> None:
     if "trip_summary" not in st.session_state:
         st.session_state.trip_summary = None
 
-    if "workflow_complete" not in st.session_state:
-        st.session_state.workflow_complete = False
+    if "awaiting_user_feedback" not in st.session_state:
+        st.session_state.awaiting_user_feedback = False
 
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = thread_id_generator()
@@ -166,7 +166,7 @@ def main() -> None:
             st.session_state.messages = []
             st.session_state.trip_summary = None
             st.session_state.certified = None
-            st.session_state.workflow_complete = False
+            st.session_state.awaiting_user_feedback = False
             st.session_state.thread_id = thread_id_generator()
             st.session_state.graph_config = {
                 "configurable": {"thread_id": st.session_state.thread_id}
@@ -184,16 +184,16 @@ def main() -> None:
 
     chat_disabled = (
         st.session_state.get("certified") is False
-        or st.session_state.get("workflow_complete") is True
     )
 
     if st.session_state.get("certified") is False:
         st.info(
             "Once you have a diving certification, you can use the **New Chat** button on the left to start a new session."
         )
-    elif st.session_state.get("workflow_complete") is True:
-        st.success(
-            "Your dive trip itinerary is complete! Use the **New Chat** button on the left to start planning another trip."
+
+    if st.session_state.get("awaiting_user_feedback"):
+        st.info(
+            "Please review the itinerary above. You can ask to modify or re-check it."
         )
 
     prompt = st.chat_input(
@@ -231,9 +231,11 @@ def main() -> None:
                                 _render_summary_markdown(event[1])
                             )
                         else:
-                            _, response, trip_summary, certified, workflow_complete = (
+                            _, response, trip_summary, certified, awaiting_user_feedback = (
                                 event
                             )
+                            if awaiting_user_feedback is not None:
+                                st.session_state.awaiting_user_feedback = awaiting_user_feedback
                             accumulated.append(response)
                             status_placeholder.markdown("\n\n".join(accumulated))
                             st.session_state.messages.append(
@@ -242,16 +244,10 @@ def main() -> None:
                                     "content": "\n\n".join(accumulated),
                                 }
                             )
-                            if any(v for v in trip_summary.values()):
+                            if trip_summary and any(v for v in trip_summary.values()):
                                 st.session_state.trip_summary = trip_summary
                             if certified is not None:
                                 st.session_state.certified = certified
-                            if workflow_complete:
-                                st.session_state.workflow_complete = True
-                                log.info(
-                                    "workflow_complete",
-                                    thread_id=st.session_state.thread_id,
-                                )
                             st.rerun()
             except Exception:
                 log.exception(

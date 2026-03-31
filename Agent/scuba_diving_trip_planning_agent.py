@@ -29,7 +29,7 @@ def response_and_summary_from_state(
             - response (str): The final AI message content to display.
             - trip_summary (Dict[str, Any]): A dictionary of extracted trip details.
             - certified (Optional[bool]): The user's certification status.
-            - workflow_complete (Optional[bool]): True if the safety check finished.
+            - awaiting_user_feedback (Optional[bool]): True if the agent is waiting for user feedback.
     """
     response: str = FALLBACK_RESPONSE_EMPTY_MESSAGES
     if state.get("messages"):
@@ -45,8 +45,8 @@ def response_and_summary_from_state(
 
     trip_summary = {k: state.get(k) for k in TRIP_SUMMARY_KEYS}
     certified = state.get("certified")
-    workflow_complete = state.get("workflow_complete", False)
-    return response, trip_summary, certified, workflow_complete
+    awaiting_user_feedback = state.get("awaiting_user_feedback", False)
+    return response, trip_summary, certified, awaiting_user_feedback
 
 
 @tenacity.retry(
@@ -89,7 +89,7 @@ def scuba_diving_trip_planning_agent(
         Union[...]: A tuple that can be one of three forms:
             - ("status", message): Interim UX status messages.
             - ("trip_summary", summary_dict): The current extracted trip details.
-            - ("done", response, trip_summary, certified, workflow_complete): The final outcome.
+            - ("done", response, trip_summary, certified, awaiting_user_feedback): The final outcome.
     """
     thread_id = config.get("configurable", {}).get("thread_id", "unknown")  # NEW
 
@@ -176,13 +176,13 @@ def scuba_diving_trip_planning_agent(
             last_state = typed_input_state
 
     assert last_state is not None
-    response, trip_summary, certified, workflow_complete = (
+    response, trip_summary, certified, awaiting_user_feedback = (
         response_and_summary_from_state(last_state)
     )
     log.info(
         "agent_done",
         thread_id=thread_id,
         certified=certified,
-        workflow_complete=workflow_complete,
+        awaiting_user_feedback=awaiting_user_feedback,
     )
-    yield ("done", response, trip_summary, certified, workflow_complete)
+    yield ("done", response, trip_summary, certified, awaiting_user_feedback)
