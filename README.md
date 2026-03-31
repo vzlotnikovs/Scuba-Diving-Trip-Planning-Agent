@@ -59,7 +59,7 @@
    uv sync
    ```
 
-3. Copy `keys.env.example` to `keys.env` and add your `OPENAI_API_KEY`, `TAVILY_API_KEY`, and `LANGSMITH_API_KEY`.
+3. Copy `keys.env.example` to `keys.env` and add your `OPENAI_API_KEY`, `TAVILY_API_KEY`, and `LANGCHAIN_API_KEY`.
 
 ## Usage
 
