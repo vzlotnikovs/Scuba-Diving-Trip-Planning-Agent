@@ -30,7 +30,7 @@ TIMEOUT: float = 120.0
 MAX_RETRIES: int = 2
 
 # Validations
-MAX_INPUT_LENGTH: int = 100
+MAX_INPUT_LENGTH: int = 300
 MIN_TRIP_DAYS: int = 1
 MAX_TRIP_DAYS: int = 14
 INJECTION_PATTERNS: List[str] = [
