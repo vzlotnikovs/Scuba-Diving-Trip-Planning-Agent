@@ -101,9 +101,6 @@ def main() -> None:
     if "trip_summary" not in st.session_state:
         st.session_state.trip_summary = None
 
-    if "awaiting_user_feedback" not in st.session_state:
-        st.session_state.awaiting_user_feedback = False
-
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = thread_id_generator()
         st.session_state.graph_config = {
@@ -166,7 +163,6 @@ def main() -> None:
             st.session_state.messages = []
             st.session_state.trip_summary = None
             st.session_state.certified = None
-            st.session_state.awaiting_user_feedback = False
             st.session_state.thread_id = thread_id_generator()
             st.session_state.graph_config = {
                 "configurable": {"thread_id": st.session_state.thread_id}
@@ -191,10 +187,13 @@ def main() -> None:
             "Once you have a diving certification, you can use the **New Chat** button on the left to start a new session."
         )
 
-    if st.session_state.get("awaiting_user_feedback"):
-        st.info(
-            "Please review the itinerary above. You can ask to modify or re-check it."
-        )
+    # Automatically ask for feedback if a full itinerary has been drafted
+    is_complete_trip = False
+    if st.session_state.get("trip_summary"):
+        is_complete_trip = all(st.session_state.trip_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS)
+    
+    if is_complete_trip and not chat_disabled:
+        st.info("Does this itinerary meet your expectations? Reply to modify or re-check.")
 
     prompt = st.chat_input(
         "Describe your desired dive trip, e.g. Trip to Bali in May for 7 days, AOW & Nitrox certified",
@@ -214,34 +213,47 @@ def main() -> None:
 
         with st.chat_message("assistant"):
             try:
-                with st.spinner("Thinking..."):
+                with st.spinner("Processing..."):
                     status_placeholder = st.empty()
-                    accumulated: List[str] = []
+                    response_placeholder = st.empty()
+                    
+                    accumulated_status = []
+                    streamed_response = ""
+                    
                     for event in scuba_diving_trip_planning_agent(
                         history=st.session_state.messages,
                         config=st.session_state.graph_config,
                     ):
                         if event[0] == "status":
                             _, status_msg = event
-                            accumulated.append(status_msg)
-                            status_placeholder.markdown("\n\n".join(accumulated))
+                            accumulated_status.append(f"**Status:** {status_msg}")
+                            status_placeholder.markdown("\n\n".join(accumulated_status))
                         elif event[0] == "trip_summary":
                             st.session_state.trip_summary = event[1]
                             summary_placeholder.markdown(
                                 _render_summary_markdown(event[1])
                             )
-                        else:
-                            _, response, trip_summary, certified, awaiting_user_feedback = (
-                                event
-                            )
-                            if awaiting_user_feedback is not None:
-                                st.session_state.awaiting_user_feedback = awaiting_user_feedback
-                            accumulated.append(response)
-                            status_placeholder.markdown("\n\n".join(accumulated))
+                        elif event[0] == "token":
+                            _, token_text = event
+                            streamed_response += token_text
+                            response_placeholder.markdown(streamed_response)
+                        elif event[0] == "done":
+                            _, final_text, trip_summary, certified, _ = event
+                            
+                            # Fallback if streaming didn't catch everything
+                            if final_text and not streamed_response:
+                                streamed_response = final_text
+                                response_placeholder.markdown(streamed_response)
+                            elif final_text and len(final_text) > len(streamed_response):
+                                streamed_response = final_text
+                                response_placeholder.markdown(streamed_response)
+                                
+                            status_placeholder.empty()
+                            
                             st.session_state.messages.append(
                                 {
                                     "role": "assistant",
-                                    "content": "\n\n".join(accumulated),
+                                    "content": streamed_response,
                                 }
                             )
                             if trip_summary and any(v for v in trip_summary.values()):
@@ -249,16 +261,16 @@ def main() -> None:
                             if certified is not None:
                                 st.session_state.certified = certified
                             st.rerun()
-            except Exception:
+            except Exception as e:
                 log.exception(
                     "agent_error",
                     thread_id=st.session_state.thread_id,
                 )
-                st.error("Something went wrong. Please try again.")
+                st.error(f"Something went wrong. Please try again. System Error: {str(e)}")
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
-                        "content": "Something went wrong. Please try again.",
+                        "content": f"Something went wrong. Please try again. System Error: {str(e)}",
                     }
                 )
 

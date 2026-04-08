@@ -12,7 +12,7 @@ PDF_FILENAME_2: str = "DAN_guidelines_for_flying_after_diving.pdf"
 # LLM Model
 LLM_MODEL: str = "gpt-5-mini"
 EMBEDDINGS_MODEL: str = "text-embedding-3-small"
-EXTRACT_INFO_TEMPERATURE: float = 0.1
+### EXTRACT_INFO_TEMPERATURE: float = 0.1
 RELEVANCE_CHECK_TEMPERATURE: float = 0.0
 PLAN_TRIP_TEMPERATURE: float = 1.0
 
@@ -47,7 +47,7 @@ TAVILY_SEARCH_TEMPERATURE: float = 0.3
 TAVILY_SEARCH_MAX_RESULTS: int = 5
 TAVILY_SEARCH_INCLUDE_ANSWER: bool = True
 TAVILY_SEARCH_SEARCH_DEPTH: str = "fast"
-TAVILY_SEARCH_QUERY: str = "best scuba diving sites in {destination} in {trip_month} for {certification_type} certified divers"
+### TAVILY_SEARCH_QUERY: str = "best scuba diving sites in {destination} in {trip_month} for {certification_type} certified divers"
 
 # Prompts
 RELEVANCE_CHECK_PROMPT: str = (
@@ -59,28 +59,28 @@ RELEVANCE_CHECK_PROMPT: str = (
     "User message: {query}"
 )
 
-EXTRACT_INFO_PROMPT: str = (
-    "From this latest user message, extract dive trip details if mentioned.\n"
-    "Only fill fields with explicit information; use null for missing/unclear.\n"
-    "Fields: certified (bool), certification_type, destination, trip_month (month of travel), trip_duration (length of trip in days, integer), nitrox (bool).\n"
-    "certified and certification_type MUST be consistent: if certification_type is any actual certification(OW, AOW, Rescue, Divemaster, etc.), set certified=True. "
-    "If the user says they are not certified or have no certification or just getting started, set certified=False (certification_type may be null or 'not certified'). "
-    "Leave both None only when certification status is not mentioned or unclear.\n"
-    "Latest message: {query}\n"
-    "Output ONLY the structured fields. Strictly follow schema."
-)
+### EXTRACT_INFO_PROMPT: str = (
+###     "From this latest user message, extract dive trip details if mentioned.\n"
+###     "Only fill fields with explicit information; use null for missing/unclear.\n"
+###     "Fields: certified (bool), certification_type, destination, trip_month (month of travel), trip_duration (length of trip in days, integer), nitrox (bool).\n"
+###     "certified and certification_type MUST be consistent: if certification_type is any actual certification(OW, AOW, Rescue, Divemaster, etc.), set certified=True. "
+###     "If the user says they are not certified or have no certification or just getting started, set certified=False (certification_type may be null or 'not certified'). "
+###     "Leave both None only when certification status is not mentioned or unclear.\n"
+###     "Latest message: {query}\n"
+###     "Output ONLY the structured fields. Strictly follow schema."
+### )
 
-PLAN_TRIP_PROMPT: str = (
-    "You are an expert scuba diving trip planner. Generate a structured dive trip itinerary based on the following details & search results:\n"
-    "Diver certification: {certification_type}\n"
-    "Dive trip destination: {destination}\n"
-    "Dive trip month & duration: {trip_duration} days in {trip_month}\n"
-    "Nitrox certified: {nitrox}\n"
-    "Search results: {search_results}\n"
-    "Include: a suggested itinerary, short description of each dive site & anticipated marine life, and any seasonal considerations.\n"
-    "Jump straight into the itinerary. Be concise. Avoid repeating or restating the dive trip details.\n"
-    "Respond in up to 350 words.\n\n"
-)
+### PLAN_TRIP_PROMPT: str = (
+###     "You are an expert scuba diving trip planner. Generate a structured dive trip itinerary based on the following details & search results:\n"
+###     "Diver certification: {certification_type}\n"
+###     "Dive trip destination: {destination}\n"
+###     "Dive trip month & duration: {trip_duration} days in {trip_month}\n"
+###     "Nitrox certified: {nitrox}\n"
+###     "Search results: {search_results}\n"
+###     "Include: a suggested itinerary, short description of each dive site & anticipated marine life, and any seasonal considerations.\n"
+###     "Jump straight into the itinerary. Be concise. Avoid repeating or restating the dive trip details.\n"
+###     "Respond in up to 350 words.\n\n"
+### )
 
 RAG_SYSTEM_PROMPT: str = (
     "You are a dive trip editor who silently verifies that itineraries meet safety standards before finalizing them.\n"
@@ -109,7 +109,7 @@ SAFETY_CHECK_PROMPT: str = (
 )
 
 # Status Messages & Fallback Responses
-NOT_CERTIFIED_MESSAGE: str = "This planner is **for certified divers only**. Please obtain a diving certification first before using this planner."
+### NOT_CERTIFIED_MESSAGE: str = "This planner is **for certified divers only**. Please obtain a diving certification first before using this planner."
 
 STATUS_ALL_COLLECTED: str = "Thank you! All required information has been collected. Generating a dive trip itinerary..."
 
@@ -117,12 +117,12 @@ STATUS_SAFETY_VALIDATING: str = (
     "Dive trip itinerary generated - validating it in terms of safety..."
 )
 
-FALLBACK_RESPONSE_EMPTY_MESSAGES: str = (
-    "I couldn't generate a response. Please try again."
-)
-FALLBACK_RESPONSE_ONLY_USER_MSG: str = (
-    "Please provide remaining details for the dive trip."
-)
+### FALLBACK_RESPONSE_EMPTY_MESSAGES: str = (
+###     "I couldn't generate a response. Please try again."
+### )
+### FALLBACK_RESPONSE_ONLY_USER_MSG: str = (
+###     "Please provide remaining details for the dive trip."
+### )
 
 # Streamlit UI Interface Constants
 PAGE_TITLE_1: str = "Scuba Diving Trip Planning Agent"

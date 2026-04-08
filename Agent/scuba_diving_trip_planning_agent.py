@@ -1,65 +1,18 @@
-from typing import List, Dict, Optional, Generator, Tuple, Union, Literal, Any, cast
-import tenacity
+from typing import List, Dict, Optional, Generator, Tuple, Union, Literal, Any
 import structlog
-from ratelimit import limits, sleep_and_retry
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
 from langchain_core.runnables.config import RunnableConfig
+from langchain_community.callbacks import get_openai_callback
+
 from Agent.workflow import react_graph
+from Agent.validation import validate_user_text
 from constants import (
     STATUS_ALL_COLLECTED,
     STATUS_SAFETY_VALIDATING,
     TRIP_SUMMARY_KEYS,
-    FALLBACK_RESPONSE_EMPTY_MESSAGES,
-    FALLBACK_RESPONSE_ONLY_USER_MSG,
 )
 
 log = structlog.get_logger()
-
-
-def response_and_summary_from_state(
-    state: Dict[str, Any],
-) -> tuple[str, Dict[str, Any], Optional[bool], Optional[bool]]:
-    """Extract final response text and trip summary details from the graph state.
-
-    Args:
-        state (Dict[str, Any]): The final state dictionary from the LangGraph run.
-
-    Returns:
-        tuple[str, Dict[str, Any], Optional[bool], Optional[bool]]: A tuple containing:
-            - response (str): The final AI message content to display.
-            - trip_summary (Dict[str, Any]): A dictionary of extracted trip details.
-            - certified (Optional[bool]): The user's certification status.
-            - awaiting_user_feedback (Optional[bool]): True if the agent is waiting for user feedback.
-    """
-    response: str = FALLBACK_RESPONSE_EMPTY_MESSAGES
-    if state.get("messages"):
-        last_ai = next(
-            (m for m in reversed(state["messages"]) if isinstance(m, AIMessage)),
-            None,
-        )
-        if last_ai:
-            content = last_ai.content
-            response = content if isinstance(content, str) else str(content)
-        else:
-            response = FALLBACK_RESPONSE_ONLY_USER_MSG
-
-    trip_summary = {k: state.get(k) for k in TRIP_SUMMARY_KEYS}
-    certified = state.get("certified")
-    awaiting_user_feedback = state.get("awaiting_user_feedback", False)
-    return response, trip_summary, certified, awaiting_user_feedback
-
-
-@tenacity.retry(
-    wait=tenacity.wait_exponential(multiplier=1, min=2, max=10),
-    stop=tenacity.stop_after_attempt(3),
-    reraise=True,
-)
-@sleep_and_retry
-@limits(calls=10, period=60)
-def invoke_graph(input_state: dict, config: RunnableConfig) -> dict:
-    """Invoke the graph synchronously and return the final state."""
-    return react_graph.invoke(input_state, config=config)
-
 
 def scuba_diving_trip_planning_agent(
     history: List[Dict[str, str]],
@@ -68,6 +21,7 @@ def scuba_diving_trip_planning_agent(
     Union[
         Tuple[Literal["status"], str],
         Tuple[Literal["trip_summary"], dict],
+        Tuple[Literal["token"], str],
         Tuple[Literal["done"], str, dict, Optional[bool], Optional[bool]],
     ],
     None,
@@ -75,9 +29,8 @@ def scuba_diving_trip_planning_agent(
 ]:
     """Stream the trip-planning graph execution and yield progress updates.
 
-    Initializes the state with the chat history and runs the compiled LangGraph.
-    Yields interim status messages (e.g., when info is collected or safety validation starts)
-    and ultimately yields the final agent response, summary, and completion status.
+    Initializes the state with the *safely sanitized newest* prompt, delegates history
+    to LangGraph's MemorySaver, and runs the compiled create_agent graph.
 
     Args:
         history (List[Dict[str, str]]): A list of dictionaries representing the chat
@@ -86,103 +39,144 @@ def scuba_diving_trip_planning_agent(
             (e.g., thread ID for memory tracking).
 
     Yields:
-        Union[...]: A tuple that can be one of three forms:
+        Union[...]: A tuple that can be one of four forms:
             - ("status", message): Interim UX status messages.
             - ("trip_summary", summary_dict): The current extracted trip details.
+            - ("token", text): Streaming token output.
             - ("done", response, trip_summary, certified, awaiting_user_feedback): The final outcome.
     """
-    thread_id = config.get("configurable", {}).get("thread_id", "unknown")  # NEW
+    thread_id = config.get("configurable", {}).get("thread_id", "unknown")
+    
+    if not history:
+        yield ("done", "No history provided.", {}, None, False)
+        return
+        
+    latest_prompt_dict = history[-1]
+    if latest_prompt_dict["role"] != "user":
+        yield ("done", "Expected user message.", {}, None, False)
+        return
+    
+    latest_prompt = latest_prompt_dict["content"]
+    
+    # 1. Inline Python Validation Layer
+    is_valid, sanitized, error_message, val_tokens, val_cost = validate_user_text(latest_prompt)
+    if not is_valid:
+        log.info("validate_input_rejected", reason=error_message)
+        yield ("done", error_message or "Invalid input.", {}, None, False)
+        return
 
+    # 2. Architecturally Sound Memory Handling
+    # We DO NOT rebuild history here. LangGraph's MemorySaver takes care of that!
+    # We only inject the safely sanitized *newest* prompt into the graph.
     input_state: Dict[str, Any] = {
-        "messages": [
-            HumanMessage(content=m["content"])
-            if m["role"] == "user"
-            else AIMessage(content=m["content"])
-            for m in history
-        ]
+        "messages": [HumanMessage(content=sanitized)]
     }
 
-    typed_input_state = cast(Any, input_state)
-
     last_state: Optional[Dict[str, Any]] = None
+    last_trip_summary = None
 
     try:
         stream = react_graph.stream(
-            typed_input_state,
+            input_state,
             config=config,
-            stream_mode=["updates", "values"],
+            stream_mode=["values", "messages"],
         )
-        multi_mode = True
-    except TypeError:
-        stream = react_graph.stream(
-            typed_input_state, config=config, stream_mode="updates"
-        )
-        multi_mode = False
+    except Exception as e:
+        log.exception("agent_stream_init_error", error=str(e))
+        yield ("done", "Fatal error initializing the agent.", {}, None, False)
+        return
 
-    log.info(
-        "agent_stream_started",
-        thread_id=thread_id,
-        history_length=len(history),
-        multi_mode=multi_mode,
-    )
+    full_response = ""
+    emitted_all_collected = False
+    emitted_trip_header = False
 
-    for chunk in stream:
-        if multi_mode and isinstance(chunk, tuple) and len(chunk) == 2:
-            mode, data = chunk
-        elif isinstance(chunk, dict) and "type" in chunk and "data" in chunk:
-            mode = chunk["type"]
-            data = chunk["data"]
-        else:
-            mode = "updates"
-            data = chunk
+    with get_openai_callback() as cb:
+        for event in stream:
+            if not isinstance(event, tuple) or len(event) != 2:
+                continue
+                
+            mode, chunk = event
+            
+            if mode == "values" and isinstance(chunk, dict):
+                last_state = chunk
+                
+                # Check for progressive summary updates to yield instantly
+                current_summary = chunk.get("trip_summary")
+                if current_summary and current_summary != last_trip_summary:
+                    last_trip_summary = current_summary.copy()
+                    yield ("trip_summary", last_trip_summary)
+                    
+                    # Check if all keys are ready
+                    is_complete = all(last_trip_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS)
+                    if is_complete and not emitted_all_collected:
+                        # Wait, we only emit if they are certified. If they aren't, disqualify_user is called.
+                        if chunk.get("certified") is not False:
+                            yield ("status", STATUS_ALL_COLLECTED)
+                            emitted_all_collected = True
+                
+                # Inspect new messages to derive statuses from tool calls
+                messages = chunk.get("messages", [])
+                if messages:
+                    last_msg = messages[-1]
+                    if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
+                        for tc in last_msg.tool_calls:
+                            if tc["name"] in ["search_tavily"]:
+                                yield ("status", "Planning your ITINERARY with Tavily Search...")
+                            elif tc["name"] == "validate_safety_with_rag":
+                                yield ("status", STATUS_SAFETY_VALIDATING)
 
-        if mode == "values":
-            last_state = data
-            continue
-
-        if mode != "updates" or not isinstance(data, dict):
-            continue
-
-        for node_name, update in data.items():
-            if node_name == "router" and isinstance(update, dict):
-                if update.get("next_node") == "update_trip_summary":
-                    log.info("agent_all_info_collected", thread_id=thread_id)  # NEW
-                    yield ("status", STATUS_ALL_COLLECTED)
-            elif node_name == "update_trip_summary" and isinstance(update, dict):
-                if "trip_summary" in update:
-                    log.info(
-                        "agent_trip_summary_updated",
-                        thread_id=thread_id,
-                        summary=update["trip_summary"],
-                    )
-                    yield ("trip_summary", update["trip_summary"])
-            elif node_name == "plan_trip" and isinstance(update, dict):
-                log.info("agent_safety_validating", thread_id=thread_id)
-                yield ("status", STATUS_SAFETY_VALIDATING)
+            elif mode == "messages":
+                # chunk is a tuple of (MessageChunk, Metadata)
+                msg_chunk = chunk[0]
+                if isinstance(msg_chunk, AIMessageChunk) and msg_chunk.content:
+                    text_content = msg_chunk.content
+                    if isinstance(text_content, str):
+                        if emitted_all_collected and not emitted_trip_header:
+                            from constants import SUMMARY_DISPLAY
+                            summary = last_trip_summary or {}
+                            d = summary.get("destination", "")
+                            m = summary.get("trip_month", "")
+                            dur = summary.get("trip_duration", "")
+                            c = summary.get("certification_type", "")
+                            n = summary.get("nitrox")
+                            trip_header = (
+                                f"{SUMMARY_DISPLAY['destination'][0]} **{d}** | "
+                                f"{SUMMARY_DISPLAY['trip_month'][0]} **{m}** | "
+                                f"{SUMMARY_DISPLAY['trip_duration'][0]} **{dur} days** | "
+                                f"{SUMMARY_DISPLAY['certification_type'][0]} **{c}** | "
+                                f"{SUMMARY_DISPLAY['nitrox'][0]} Nitrox: **{'Yes' if n else 'No'}**\n\n"
+                                f"**Your Dive Trip Plan:**\n\n"
+                            )
+                            full_response += trip_header
+                            yield ("token", trip_header)
+                            emitted_trip_header = True
+                            
+                        full_response += text_content
+                        yield ("token", text_content)
 
     if last_state is None:
-        log.warning(
-            "agent_stream_no_state_fallback_to_invoke",
-            thread_id=thread_id,
-        )
-        try:
-            last_state = invoke_graph(typed_input_state, config=config)
-        except Exception as e:
-            log.exception(
-                "agent_invoke_fallback_error",
-                thread_id=thread_id,
-                error=str(e),
-            )
-            last_state = typed_input_state
+        last_state = react_graph.get_state(config).values
 
-    assert last_state is not None
-    response, trip_summary, certified, awaiting_user_feedback = (
-        response_and_summary_from_state(last_state)
-    )
-    log.info(
-        "agent_done",
-        thread_id=thread_id,
-        certified=certified,
-        awaiting_user_feedback=awaiting_user_feedback,
-    )
-    yield ("done", response, trip_summary, certified, awaiting_user_feedback)
+    trip_summary = {k: last_state.get(k) for k in TRIP_SUMMARY_KEYS} if last_state else {}
+    certified = last_state.get("certified") if last_state else None
+    awaiting_user_feedback = False # We eliminated handle_user_feedback
+    
+    # If full_response is empty, model might have just used a tool and returned nothing, or we fallback
+    if not full_response and last_state and last_state.get("messages"):
+        messages = last_state["messages"]
+        last_ai_msgs = [m for m in messages if isinstance(m, AIMessage)]
+        if last_ai_msgs:
+            final_content = last_ai_msgs[-1].content
+            if isinstance(final_content, str):
+                full_response = final_content
+
+    # Injecting Token usage string manually to mirror old functionality
+    if full_response and (cb.total_tokens > 0 or val_tokens > 0):
+        final_tokens = cb.total_tokens + (val_tokens or 0)
+        final_cost = cb.total_cost + (val_cost or 0.0)
+        
+        token_str = f"\n\n_Tokens: {final_tokens} | Cost: ${final_cost:.4f}_"
+        full_response += token_str
+        yield ("token", token_str)
+
+    yield ("done", full_response, trip_summary, certified, awaiting_user_feedback)
