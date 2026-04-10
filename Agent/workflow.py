@@ -1,8 +1,9 @@
 import structlog
-from typing import TypedDict, Dict, Any, Optional, Annotated, Callable
+from typing_extensions import TypedDict
+from typing import Dict, Any, Optional, Annotated, Callable
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import AIMessage, HumanMessage, AnyMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AnyMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
 from langchain.agents import create_agent
@@ -20,8 +21,12 @@ from constants import (
     TAVILY_SEARCH_MAX_RESULTS,
     TAVILY_SEARCH_INCLUDE_ANSWER,
     TAVILY_SEARCH_SEARCH_DEPTH,
+    TAVILY_SEARCH_QUERY,
+    SYSTEM_PROMPT,
     SAFETY_CHECK_PROMPT,
     TRIP_SUMMARY_KEYS,
+    MIN_TRIP_DAYS,
+    MAX_TRIP_DAYS,
 )
 
 log = structlog.get_logger()
@@ -38,18 +43,42 @@ _tavily = TavilySearch(
 )
 
 
+def certified_reducer(a: Optional[bool], b: Optional[bool]) -> Optional[bool]:
+    """Safety-first reducer: disqualification (False) is permanent and always wins."""
+    if a is False or b is False:
+        return False
+    return b if b is not None else a
+
+
+def dict_merge_reducer(
+    a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """Merge two dicts so parallel tool updates to different keys are combined without data loss."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return {**a, **b}
+
+
+def scalar_reducer(a: Any, b: Any) -> Any:
+    """Prefer the incoming non-None value; fall back to the existing value."""
+    return b if b is not None else a
+
+
 class AgentState(TypedDict, total=False):
     """Structured Agent State"""
+
     messages: Annotated[list[AnyMessage], add_messages]
-    certified: Optional[bool]
-    certification_type: Optional[str]
-    destination: Optional[str]
-    trip_month: Optional[str]
-    trip_duration: Optional[int]
-    nitrox: Optional[bool]
-    trip_summary: Optional[Dict[str, Any]]
-    total_tokens: Optional[int]
-    total_cost: Optional[float]
+    certified: Annotated[Optional[bool], certified_reducer]
+    certification_type: Annotated[Optional[str], scalar_reducer]
+    destination: Annotated[Optional[str], scalar_reducer]
+    trip_month: Annotated[Optional[str], scalar_reducer]
+    trip_duration: Annotated[Optional[int], scalar_reducer]
+    nitrox: Annotated[Optional[bool], scalar_reducer]
+    trip_summary: Annotated[Optional[Dict[str, Any]], dict_merge_reducer]
+    total_tokens: Annotated[Optional[int], scalar_reducer]
+    total_cost: Annotated[Optional[float], scalar_reducer]
 
 
 @tool
@@ -69,7 +98,7 @@ def save_trip_summary(
         update_dict["destination"] = destination
     if trip_month is not None:
         update_dict["trip_month"] = trip_month
-    
+
     if trip_duration is not None:
         if validate_trip_duration(trip_duration):
             update_dict["trip_duration"] = trip_duration
@@ -78,7 +107,7 @@ def save_trip_summary(
                 update={
                     "messages": [
                         ToolMessage(
-                            content="Error: Invalid trip duration. Must be between 1 and 14 days. Please ask user to adjust.",
+                            content=f"Error: Invalid trip duration. Must be between {MIN_TRIP_DAYS} and {MAX_TRIP_DAYS} days. Please ask user to adjust.",
                             tool_call_id=runtime.tool_call_id,
                         )
                     ]
@@ -148,9 +177,25 @@ def disqualify_user(runtime: ToolRuntime) -> Command:
 
 
 @tool
-def search_tavily(query: str) -> str:
-    """Search the web for diving site recommendations. ONLY call this once all trip preferences are gathered."""
-    log.info("search_tavily_called", query=query)
+def search_tavily(state: AgentState) -> str:
+    """Search the web for scuba diving site recommendations. ONLY call this once all trip preferences are gathered.
+    The query MUST follow this exact format: 'best scuba diving sites in {destination} in {trip_month} for {certification_type} divers'.
+    Do NOT add specific site names, liveaboard options, or any other detail not explicitly provided by the user."""
+    log.info("search_tavily_called")
+    
+    destination = state.get("destination")
+    trip_month = state.get("trip_month")
+    certification_type = state.get("certification_type")
+    trip_duration = state.get("trip_duration")
+    nitrox = state.get("nitrox")
+
+    query = TAVILY_SEARCH_QUERY.format(
+        destination=destination,
+        trip_month=trip_month,
+        certification_type=certification_type,
+        trip_duration=trip_duration,
+        nitrox="Nitrox / Enriched Air" if nitrox else "Regular Air",
+    )
     results = _tavily.invoke(query)
     return str(results)
 
@@ -162,17 +207,21 @@ def validate_safety_with_rag(itinerary_draft: str, nitrox: bool) -> str:
     gas_context = "Nitrox (enriched air)" if nitrox else "Regular air"
     rag = RAGSystem().get_instance()
     agent = rag.agent
-    
+
     safety_check_prompt = SAFETY_CHECK_PROMPT.format(
         itinerary_text=itinerary_draft, gas_context=gas_context
     )
-    
+
     result = agent.invoke({"messages": [HumanMessage(content=safety_check_prompt)]})
     result_messages = result.get("messages") or []
-    
+
     if result_messages:
-        return result_messages[-1].content if hasattr(result_messages[-1], "content") else str(result_messages[-1])
-        
+        return (
+            result_messages[-1].content
+            if hasattr(result_messages[-1], "content")
+            else str(result_messages[-1])
+        )
+
     return "Safety validation could not be completed."
 
 
@@ -215,27 +264,6 @@ agent_tools = [
     validate_safety_with_rag,
 ]
 
-SYSTEM_PROMPT = """You are a scuba diving trip planning assistant. 
-Your goal is to collect user preferences, draft an itinerary, and safety-check it.
-
-1. Information Collection:
-You must collect exactly 5 pieces of information: Destination, Month, Duration, Certification Type, and whether they want Nitrox.
-Ask the user explicitly for anything you are missing.
-Whenever you learn ANY new information, ALWAYS call `save_trip_summary` progressively. Do not wait until you have all 5.
-
-2. Certification Check:
-If the user indicates they are not certified (or "None", "N/a", etc.), you MUST immediately call `disqualify_user`. When responding, you must adhere strictly to the refusal message instruction and never offer alternative activities or training options.
-
-3. Drafting and Safety:
-Once you have collected all 5 preferences, you will be granted access to the `search_tavily` and `validate_safety_with_rag` tools.
-You MUST IMMEDIATELY call `search_tavily` without asking the user for permission or special preferences. Do not pause the conversation. 
-Then, draft an itinerary using the search results and pass the string to `validate_safety_with_rag` to ensure it is compliant with DAN/PADI guidelines.
-
-When presenting the final validated itinerary to the user, strictly adhere to these rules:
-- Include a suggested itinerary, short description of each dive site & anticipated marine life, and any seasonal considerations.
-- Be concise. Respond in up to 350 words.
-- CRITICAL: DO NOT add any concluding questions or suggestions at the end (e.g. "Would you like...", "I can send...", "Which would you prefer?"). Simply state the itinerary and stop generating text.
-"""
 
 memory = MemorySaver()
 

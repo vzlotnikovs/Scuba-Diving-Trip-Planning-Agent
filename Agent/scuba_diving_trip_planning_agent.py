@@ -8,11 +8,13 @@ from Agent.workflow import react_graph
 from Agent.validation import validate_user_text
 from constants import (
     STATUS_ALL_COLLECTED,
-    STATUS_SAFETY_VALIDATING,
+    STATUS_TRIP_GENERATING,
+    STATUS_TRIP_VALIDATING,
     TRIP_SUMMARY_KEYS,
 )
 
 log = structlog.get_logger()
+
 
 def scuba_diving_trip_planning_agent(
     history: List[Dict[str, str]],
@@ -46,31 +48,25 @@ def scuba_diving_trip_planning_agent(
             - ("done", response, trip_summary, certified, awaiting_user_feedback): The final outcome.
     """
     thread_id = config.get("configurable", {}).get("thread_id", "unknown")
-    
+
     if not history:
-        yield ("done", "No history provided.", {}, None, False)
-        return
-        
-    latest_prompt_dict = history[-1]
-    if latest_prompt_dict["role"] != "user":
-        yield ("done", "Expected user message.", {}, None, False)
-        return
-    
-    latest_prompt = latest_prompt_dict["content"]
-    
-    # 1. Inline Python Validation Layer
-    is_valid, sanitized, error_message, val_tokens, val_cost = validate_user_text(latest_prompt)
-    if not is_valid:
-        log.info("validate_input_rejected", reason=error_message)
-        yield ("done", error_message or "Invalid input.", {}, None, False)
+        yield ("done", "No history provided.", {}, None)
         return
 
-    # 2. Architecturally Sound Memory Handling
-    # We DO NOT rebuild history here. LangGraph's MemorySaver takes care of that!
-    # We only inject the safely sanitized *newest* prompt into the graph.
-    input_state: Dict[str, Any] = {
-        "messages": [HumanMessage(content=sanitized)]
-    }
+    latest_prompt_dict = history[-1]
+    if latest_prompt_dict["role"] != "user":
+        yield ("done", "Expected user message.", {}, None)
+        return
+
+    latest_prompt = latest_prompt_dict["content"]
+
+    is_valid, sanitized, error_message = validate_user_text(latest_prompt)
+    if not is_valid:
+        log.info("validate_input_rejected", reason=error_message)
+        yield ("done", error_message or "Invalid input.", {}, None)
+        return
+
+    input_state: Dict[str, Any] = {"messages": [HumanMessage(content=sanitized)]}
 
     last_state: Optional[Dict[str, Any]] = None
     last_trip_summary = None
@@ -83,7 +79,7 @@ def scuba_diving_trip_planning_agent(
         )
     except Exception as e:
         log.exception("agent_stream_init_error", error=str(e))
-        yield ("done", "Fatal error initializing the agent.", {}, None, False)
+        yield ("done", "Fatal error initializing the agent.", {}, None)
         return
 
     full_response = ""
@@ -94,45 +90,42 @@ def scuba_diving_trip_planning_agent(
         for event in stream:
             if not isinstance(event, tuple) or len(event) != 2:
                 continue
-                
+
             mode, chunk = event
-            
+
             if mode == "values" and isinstance(chunk, dict):
                 last_state = chunk
-                
-                # Check for progressive summary updates to yield instantly
+
                 current_summary = chunk.get("trip_summary")
                 if current_summary and current_summary != last_trip_summary:
                     last_trip_summary = current_summary.copy()
                     yield ("trip_summary", last_trip_summary)
-                    
-                    # Check if all keys are ready
-                    is_complete = all(last_trip_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS)
+                    is_complete = all(
+                        last_trip_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS
+                    )
                     if is_complete and not emitted_all_collected:
-                        # Wait, we only emit if they are certified. If they aren't, disqualify_user is called.
                         if chunk.get("certified") is not False:
                             yield ("status", STATUS_ALL_COLLECTED)
                             emitted_all_collected = True
-                
-                # Inspect new messages to derive statuses from tool calls
+
                 messages = chunk.get("messages", [])
                 if messages:
                     last_msg = messages[-1]
                     if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
                         for tc in last_msg.tool_calls:
                             if tc["name"] in ["search_tavily"]:
-                                yield ("status", "Planning your ITINERARY with Tavily Search...")
+                                yield ("status", STATUS_TRIP_GENERATING)
                             elif tc["name"] == "validate_safety_with_rag":
-                                yield ("status", STATUS_SAFETY_VALIDATING)
+                                yield ("status", STATUS_TRIP_VALIDATING)
 
             elif mode == "messages":
-                # chunk is a tuple of (MessageChunk, Metadata)
                 msg_chunk = chunk[0]
                 if isinstance(msg_chunk, AIMessageChunk) and msg_chunk.content:
                     text_content = msg_chunk.content
                     if isinstance(text_content, str):
                         if emitted_all_collected and not emitted_trip_header:
                             from constants import SUMMARY_DISPLAY
+
                             summary = last_trip_summary or {}
                             d = summary.get("destination", "")
                             m = summary.get("trip_month", "")
@@ -150,18 +143,18 @@ def scuba_diving_trip_planning_agent(
                             full_response += trip_header
                             yield ("token", trip_header)
                             emitted_trip_header = True
-                            
+
                         full_response += text_content
                         yield ("token", text_content)
 
     if last_state is None:
         last_state = react_graph.get_state(config).values
 
-    trip_summary = {k: last_state.get(k) for k in TRIP_SUMMARY_KEYS} if last_state else {}
+    trip_summary = (
+        {k: last_state.get(k) for k in TRIP_SUMMARY_KEYS} if last_state else {}
+    )
     certified = last_state.get("certified") if last_state else None
-    awaiting_user_feedback = False # We eliminated handle_user_feedback
-    
-    # If full_response is empty, model might have just used a tool and returned nothing, or we fallback
+
     if not full_response and last_state and last_state.get("messages"):
         messages = last_state["messages"]
         last_ai_msgs = [m for m in messages if isinstance(m, AIMessage)]
@@ -170,13 +163,9 @@ def scuba_diving_trip_planning_agent(
             if isinstance(final_content, str):
                 full_response = final_content
 
-    # Injecting Token usage string manually to mirror old functionality
-    if full_response and (cb.total_tokens > 0 or val_tokens > 0):
-        final_tokens = cb.total_tokens + (val_tokens or 0)
-        final_cost = cb.total_cost + (val_cost or 0.0)
-        
-        token_str = f"\n\n_Tokens: {final_tokens} | Cost: ${final_cost:.4f}_"
+    if full_response and cb.total_tokens > 0:
+        token_str = f"\n\n_Tokens: {cb.total_tokens} | Cost: ${cb.total_cost:.4f}_"
         full_response += token_str
         yield ("token", token_str)
 
-    yield ("done", full_response, trip_summary, certified, awaiting_user_feedback)
+    yield ("done", full_response, trip_summary, certified)

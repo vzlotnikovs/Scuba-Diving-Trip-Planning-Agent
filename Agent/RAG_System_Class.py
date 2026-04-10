@@ -25,7 +25,7 @@ from constants import (
     COLLECTION_NAME,
     PERSIST_DIR,
     K_CONSTANT,
-    RAG_SYSTEM_PROMPT,
+    RAG_PROMPT,
     TIMEOUT,
     MAX_RETRIES,
 )
@@ -68,7 +68,7 @@ class RAGSystem:
         self.COLLECTION_NAME = COLLECTION_NAME
         self.PERSIST_DIR = PERSIST_DIR
         self.K_CONSTANT = K_CONSTANT
-        self.RAG_SYSTEM_PROMPT = RAG_SYSTEM_PROMPT
+        self.RAG_PROMPT = RAG_PROMPT
 
     @classmethod
     def get_instance(cls) -> "RAGSystem":
@@ -109,7 +109,7 @@ class RAGSystem:
                     max_retries=MAX_RETRIES,
                 ),
                 tools=[retrieve_context],
-                system_prompt=self.RAG_SYSTEM_PROMPT,
+                system_prompt=self.RAG_PROMPT,
                 checkpointer=MemorySaver(),
             )
             log.info(

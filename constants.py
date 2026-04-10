@@ -12,9 +12,7 @@ PDF_FILENAME_2: str = "DAN_guidelines_for_flying_after_diving.pdf"
 # LLM Model
 LLM_MODEL: str = "gpt-5-mini"
 EMBEDDINGS_MODEL: str = "text-embedding-3-small"
-### EXTRACT_INFO_TEMPERATURE: float = 0.1
-RELEVANCE_CHECK_TEMPERATURE: float = 0.0
-PLAN_TRIP_TEMPERATURE: float = 1.0
+PLAN_TRIP_TEMPERATURE: float = 0.4
 
 # Text splitting
 CHUNK_SIZE: int = 1000
@@ -40,49 +38,50 @@ INJECTION_PATTERNS: List[str] = [
     r"<\|.*?\|>",
 ]
 
-RELEVANCE_ERROR_MESSAGE: str = "Your message doesn't seem to be about scuba diving trip planning. Please try again."
-
 # Tavily Search Settings
 TAVILY_SEARCH_TEMPERATURE: float = 0.3
 TAVILY_SEARCH_MAX_RESULTS: int = 5
 TAVILY_SEARCH_INCLUDE_ANSWER: bool = True
 TAVILY_SEARCH_SEARCH_DEPTH: str = "fast"
-### TAVILY_SEARCH_QUERY: str = "best scuba diving sites in {destination} in {trip_month} for {certification_type} certified divers"
+TAVILY_SEARCH_QUERY: str = "best scuba diving sites in {destination} in {trip_month} for {certification_type} certified divers (use {nitrox} for diving)"
 
 # Prompts
-RELEVANCE_CHECK_PROMPT: str = (
-    "You are a classifier. Decide if the user message is about a potential scuba diving trip "
-    "Relevant details: country / destination, dates, trip duration, scuba diving certification, nitrox."
-    "Answer relevant=true when the user shares any of these details or is asking for help planning or discussing a dive trip, etc. "
-    "Answer relevant=false for: weather, sightseeing, generic advice, etc. "
-    "Assume the intent is scuba diving trip planning, but say relevant=false if the user ends the message with a question or a statement that is not about scuba diving trip planning.\n\n"
-    "User message: {query}"
-)
 
-### EXTRACT_INFO_PROMPT: str = (
-###     "From this latest user message, extract dive trip details if mentioned.\n"
-###     "Only fill fields with explicit information; use null for missing/unclear.\n"
-###     "Fields: certified (bool), certification_type, destination, trip_month (month of travel), trip_duration (length of trip in days, integer), nitrox (bool).\n"
-###     "certified and certification_type MUST be consistent: if certification_type is any actual certification(OW, AOW, Rescue, Divemaster, etc.), set certified=True. "
-###     "If the user says they are not certified or have no certification or just getting started, set certified=False (certification_type may be null or 'not certified'). "
-###     "Leave both None only when certification status is not mentioned or unclear.\n"
-###     "Latest message: {query}\n"
-###     "Output ONLY the structured fields. Strictly follow schema."
-### )
+SYSTEM_PROMPT: str = """
+You are a scuba diving trip planning assistant. 
+Your goal is to collect trip details, draft an itinerary, and safety-check it.
 
-### PLAN_TRIP_PROMPT: str = (
-###     "You are an expert scuba diving trip planner. Generate a structured dive trip itinerary based on the following details & search results:\n"
-###     "Diver certification: {certification_type}\n"
-###     "Dive trip destination: {destination}\n"
-###     "Dive trip month & duration: {trip_duration} days in {trip_month}\n"
-###     "Nitrox certified: {nitrox}\n"
-###     "Search results: {search_results}\n"
-###     "Include: a suggested itinerary, short description of each dive site & anticipated marine life, and any seasonal considerations.\n"
-###     "Jump straight into the itinerary. Be concise. Avoid repeating or restating the dive trip details.\n"
-###     "Respond in up to 350 words.\n\n"
-### )
+0. Relevance Check:
+You must strictly assist only with scuba diving trip planning. 
+If a user's requested topic is completely unrelated (e.g., general weather, sightseeing, unrelated activities), politely inform them that your purpose is scuba diving trip planning and ask them to provide trip details.
+CRITICAL: Do NOT reject short, direct answers to your own questions (e.g., "None", "Yes", "7 days", "Maldives"). Treat these as highly relevant responses for your information collection.
 
-RAG_SYSTEM_PROMPT: str = (
+1. Certification Check:
+Whenever the user provides new information, ALWAYS check FIRST if they are certified.
+If the user indicates they are NOT certified (e.g., "None", "N/a", "Never dived"), you MUST immediately call ONLY `disqualify_user`. Do NOT call `save_trip_summary` in this case.
+When responding after disqualification, adhere strictly to the refusal message instruction and never offer alternative activities or training options.
+Valid certification types are Open Water (OW), Advanced Open Water (AOW), Rescue Diver, Divemaster (DM), and Instructor (and common abbreviations thereof). If the user provides a certification type that sounds implausible or fictional, politely reject it and ask them to provide a valid certification type before proceeding.
+
+2. Information Collection:
+If the user is certified (or their certification status is not yet known), you must collect exactly 5 pieces of information: Destination, Month, Duration, Certification Type, and Nitrox.
+Ask the user explicitly for anything you are missing.
+Whenever you learn ANY new information (and they are not disqualified), call `save_trip_summary` progressively. Do not wait until you have all 5.
+
+3. Drafting and Safety:
+Once you have collected all 5 pieces of information, you will be granted access to the `search_tavily` and `validate_safety_with_rag` tools.
+You MUST IMMEDIATELY call `search_tavily` without asking the user for permission or special preferences. Do not pause the conversation. 
+Then, draft an itinerary using the search results and pass the string to `validate_safety_with_rag` to ensure it is compliant with DAN/PADI guidelines.
+
+When presenting the final validated itinerary to the user, strictly adhere to these rules:
+- Use bullet points to present the itinerary.
+- Go straight into the itinerary. No need to restate the destination, month, duration, certification type, or nitrox at the beginning.
+- Include a short description of each dive site
+- Mention anticipated marine life and any seasonal considerations if relevant. No need to include this for every single bullet point.
+- Be concise. Respond in up to 400 words.
+- CRITICAL: DO NOT add any concluding questions or suggestions at the end (e.g. "Would you like...", "I can send...", "Which would you prefer?"). Simply state the itinerary and stop generating text."
+"""
+
+RAG_PROMPT: str = (
     "You are a dive trip editor who silently verifies that itineraries meet safety standards before finalizing them.\n"
     "You have access to safety guidelines for 'no decompression' limits for both regular air and nitrox, "
     "and for flying-after-diving interval rules.\n"
@@ -109,20 +108,13 @@ SAFETY_CHECK_PROMPT: str = (
 )
 
 # Status Messages & Fallback Responses
-### NOT_CERTIFIED_MESSAGE: str = "This planner is **for certified divers only**. Please obtain a diving certification first before using this planner."
+STATUS_ALL_COLLECTED: str = "Thank you for sharing all the required information!"
 
-STATUS_ALL_COLLECTED: str = "Thank you! All required information has been collected. Generating a dive trip itinerary..."
+STATUS_TRIP_GENERATING: str = "Generating a dive trip itinerary..."
 
-STATUS_SAFETY_VALIDATING: str = (
+STATUS_TRIP_VALIDATING: str = (
     "Dive trip itinerary generated - validating it in terms of safety..."
 )
-
-### FALLBACK_RESPONSE_EMPTY_MESSAGES: str = (
-###     "I couldn't generate a response. Please try again."
-### )
-### FALLBACK_RESPONSE_ONLY_USER_MSG: str = (
-###     "Please provide remaining details for the dive trip."
-### )
 
 # Streamlit UI Interface Constants
 PAGE_TITLE_1: str = "Scuba Diving Trip Planning Agent"

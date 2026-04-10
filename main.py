@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from pathlib import Path
-from typing import List, Optional, cast, Literal
+from typing import Optional, cast, Literal
 import streamlit as st
 import json
 from datetime import datetime
@@ -178,9 +178,7 @@ def main() -> None:
         with st.chat_message(role):
             st.markdown(content)
 
-    chat_disabled = (
-        st.session_state.get("certified") is False
-    )
+    chat_disabled = st.session_state.get("certified") is False
 
     if st.session_state.get("certified") is False:
         st.info(
@@ -190,10 +188,14 @@ def main() -> None:
     # Automatically ask for feedback if a full itinerary has been drafted
     is_complete_trip = False
     if st.session_state.get("trip_summary"):
-        is_complete_trip = all(st.session_state.trip_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS)
-    
+        is_complete_trip = all(
+            st.session_state.trip_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS
+        )
+
     if is_complete_trip and not chat_disabled:
-        st.info("Does this itinerary meet your expectations? Reply to modify or re-check.")
+        st.info(
+            "Does this itinerary meet your expectations? Reply to modify or re-check."
+        )
 
     prompt = st.chat_input(
         "Describe your desired dive trip, e.g. Trip to Bali in May for 7 days, AOW & Nitrox certified",
@@ -216,17 +218,17 @@ def main() -> None:
                 with st.spinner("Processing..."):
                     status_placeholder = st.empty()
                     response_placeholder = st.empty()
-                    
+
                     accumulated_status = []
                     streamed_response = ""
-                    
+
                     for event in scuba_diving_trip_planning_agent(
                         history=st.session_state.messages,
                         config=st.session_state.graph_config,
                     ):
                         if event[0] == "status":
                             _, status_msg = event
-                            accumulated_status.append(f"**Status:** {status_msg}")
+                            accumulated_status.append(status_msg)
                             status_placeholder.markdown("\n\n".join(accumulated_status))
                         elif event[0] == "trip_summary":
                             st.session_state.trip_summary = event[1]
@@ -238,18 +240,20 @@ def main() -> None:
                             streamed_response += token_text
                             response_placeholder.markdown(streamed_response)
                         elif event[0] == "done":
-                            _, final_text, trip_summary, certified, _ = event
-                            
+                            _, final_text, trip_summary, certified = event
+
                             # Fallback if streaming didn't catch everything
                             if final_text and not streamed_response:
                                 streamed_response = final_text
                                 response_placeholder.markdown(streamed_response)
-                            elif final_text and len(final_text) > len(streamed_response):
+                            elif final_text and len(final_text) > len(
+                                streamed_response
+                            ):
                                 streamed_response = final_text
                                 response_placeholder.markdown(streamed_response)
-                                
+
                             status_placeholder.empty()
-                            
+
                             st.session_state.messages.append(
                                 {
                                     "role": "assistant",
@@ -266,7 +270,9 @@ def main() -> None:
                     "agent_error",
                     thread_id=st.session_state.thread_id,
                 )
-                st.error(f"Something went wrong. Please try again. System Error: {str(e)}")
+                st.error(
+                    f"Something went wrong. Please try again. System Error: {str(e)}"
+                )
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
