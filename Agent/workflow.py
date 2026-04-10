@@ -3,7 +3,7 @@ from typing_extensions import TypedDict
 from typing import Dict, Any, Optional, Annotated, Callable
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AnyMessage, ToolMessage
+from langchain_core.messages import AnyMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
 from langchain.agents import create_agent
@@ -13,10 +13,11 @@ from langchain_tavily import TavilySearch
 from langgraph.types import Command
 
 from Agent.RAG_System_Class import RAGSystem
-from Agent.validation import validate_trip_duration
+from Agent.validation import validate_trip_duration, sanitize_text_for_model
 from constants import (
     LLM_MODEL,
     PLAN_TRIP_TEMPERATURE,
+    SAFETY_CHECK_TEMPERATURE,
     TAVILY_SEARCH_TEMPERATURE,
     TAVILY_SEARCH_MAX_RESULTS,
     TAVILY_SEARCH_INCLUDE_ANSWER,
@@ -31,8 +32,13 @@ from constants import (
 
 log = structlog.get_logger()
 
+
+
+
+
 # Standard LLM for the agent ReAct loop
 _llm = ChatOpenAI(model=LLM_MODEL, temperature=PLAN_TRIP_TEMPERATURE)
+_safety_llm = ChatOpenAI(model=LLM_MODEL, temperature=SAFETY_CHECK_TEMPERATURE)
 
 # Tavily client for the custom tool
 _tavily = TavilySearch(
@@ -177,12 +183,13 @@ def disqualify_user(runtime: ToolRuntime) -> Command:
 
 
 @tool
-def search_tavily(state: AgentState) -> str:
+def search_tavily(runtime: ToolRuntime) -> str:
     """Search the web for scuba diving site recommendations. ONLY call this once all trip preferences are gathered.
     The query MUST follow this exact format: 'best scuba diving sites in {destination} in {trip_month} for {certification_type} divers'.
     Do NOT add specific site names, liveaboard options, or any other detail not explicitly provided by the user."""
     log.info("search_tavily_called")
-    
+
+    state = runtime.state or {}
     destination = state.get("destination")
     trip_month = state.get("trip_month")
     certification_type = state.get("certification_type")
@@ -197,7 +204,7 @@ def search_tavily(state: AgentState) -> str:
         nitrox="Nitrox / Enriched Air" if nitrox else "Regular Air",
     )
     results = _tavily.invoke(query)
-    return str(results)
+    return sanitize_text_for_model(results)
 
 
 @tool
@@ -205,22 +212,22 @@ def validate_safety_with_rag(itinerary_draft: str, nitrox: bool) -> str:
     """Validate a draft itinerary against safety guidelines using RAG. ONLY call this once you have drafted a full itinerary."""
     log.info("validate_safety_with_rag_called", nitrox=nitrox)
     gas_context = "Nitrox (enriched air)" if nitrox else "Regular air"
-    rag = RAGSystem().get_instance()
-    agent = rag.agent
+    rag = RAGSystem.get_instance()
+    retrieval_query = (
+        f"Safety-check this dive itinerary for {gas_context}. "
+        f"Itinerary:\n{itinerary_draft}"
+    )
+    retrieved_context = rag.retrieve_context(retrieval_query)
 
     safety_check_prompt = SAFETY_CHECK_PROMPT.format(
-        itinerary_text=itinerary_draft, gas_context=gas_context
+        itinerary_text=itinerary_draft,
+        gas_context=gas_context,
+        retrieved_context=retrieved_context,
     )
 
-    result = agent.invoke({"messages": [HumanMessage(content=safety_check_prompt)]})
-    result_messages = result.get("messages") or []
-
-    if result_messages:
-        return (
-            result_messages[-1].content
-            if hasattr(result_messages[-1], "content")
-            else str(result_messages[-1])
-        )
+    result = _safety_llm.invoke(safety_check_prompt)
+    if hasattr(result, "content"):
+        return sanitize_text_for_model(result.content)
 
     return "Safety validation could not be completed."
 

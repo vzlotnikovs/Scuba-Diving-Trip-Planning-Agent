@@ -13,6 +13,7 @@ PDF_FILENAME_2: str = "DAN_guidelines_for_flying_after_diving.pdf"
 LLM_MODEL: str = "gpt-5-mini"
 EMBEDDINGS_MODEL: str = "text-embedding-3-small"
 PLAN_TRIP_TEMPERATURE: float = 0.4
+SAFETY_CHECK_TEMPERATURE: float = 0.1
 
 # Text splitting
 CHUNK_SIZE: int = 1000
@@ -72,38 +73,41 @@ Once you have collected all 5 pieces of information, you will be granted access 
 You MUST IMMEDIATELY call `search_tavily` without asking the user for permission or special preferences. Do not pause the conversation. 
 Then, draft an itinerary using the search results and pass the string to `validate_safety_with_rag` to ensure it is compliant with DAN/PADI guidelines.
 
-When presenting the final validated itinerary to the user, strictly adhere to these rules:
-- Use bullet points to present the itinerary.
-- Go straight into the itinerary. No need to restate the destination, month, duration, certification type, or nitrox at the beginning.
-- Include a short description of each dive site
-- Mention anticipated marine life and any seasonal considerations if relevant. No need to include this for every single bullet point.
-- Be concise. Respond in up to 400 words.
-- CRITICAL: DO NOT add any concluding questions or suggestions at the end (e.g. "Would you like...", "I can send...", "Which would you prefer?"). Simply state the itinerary and stop generating text."
+After calling `validate_safety_with_rag`, your final response MUST be exactly and only the tool output.
+Do NOT add any additional preface, summary, duplicate itinerary, reformatted version, or concluding question.
+A trip header block is rendered by the app. Do NOT repeat destination, month, duration, certification, or nitrox summary inside the itinerary body.
+Final itinerary should include dive sites, marine life highlights, and notable dive features, while keeping safety guidance concise.
 """
 
-RAG_PROMPT: str = (
+SAFETY_CHECK_PROMPT: str = (
     "You are a dive trip editor who silently verifies that itineraries meet safety standards before finalizing them.\n"
     "You have access to safety guidelines for 'no decompression' limits for both regular air and nitrox, "
     "and for flying-after-diving interval rules.\n"
     "Your output is always a complete, finalized itinerary — not a safety report.\n"
     "Make only the minimum changes needed to fix genuine violations. "
-    "If the itinerary is already compliant, reproduce it with no changes.\n"
-)
-
-SAFETY_CHECK_PROMPT: str = (
+    "If the itinerary is already compliant, reproduce it with no changes.\n\n"
     "The diver is using {gas_context}. Review the itinerary against 'no decompression' limits for {gas_context}, "
     "depth limits for the diver's certification, and flying-after-diving rules. Then output the finalized itinerary.\n\n"
+    "Reference safety context:\n{retrieved_context}\n\n"
     "RULES:\n"
     "1. Output the itinerary as-is unless there is a specific, concrete violation "
-    "(e.g. too deep, too long, flying interval too short). Do not make changes for "
-    "generic caution.\n"
+    "(e.g. too deep, too long, flying interval too short). Do not make changes for generic caution.\n"
     "2. If a violation exists, fix it with the minimum edit: adjust a depth, reduce "
     "dives on a day, or insert a required surface interval. Do not restructure the whole itinerary.\n"
-    "3. If a flying interval is required (mid-trip or at end), insert it as a single "
-    "line into the itinerary. Reduce dive sites on that day if needed - do not add days.\n"
-    "4. Do not add Safety sections, risk callouts, or generic advice. Do not mention sunscreen or gear prep / gear checks. \n"
+    "3. If a flying interval is required (mid-trip or at end), insert it as a single line into the itinerary. Reduce dive sites on that day if needed - do not add days.\n"
+    "4. Do not add Safety sections, risk callouts, or generic advice. Do not mention sunscreen or gear prep / buoyancy checks. \n"
     "5. Violations that are fixed should be invisible in the output - just show the corrected plan.\n"
-    "6. Respond in up to 350 words.\n\n"
+    "6. Output format: bullet-point itinerary only. Start directly with bullet points.\n"
+    "7. Do not add concluding questions or follow-up suggestions.\n"
+    "8. The app already shows a trip header summary. Do NOT repeat destination/month/duration/certification/nitrox as a separate overview bullet.\n"
+    "9. Use exactly one bullet per day (Day 1 ... Day N), with up to 3 concise sentences in each day bullet (max 15 words per sentence).\n"
+    "10. Readability formatting is encouraged (e.g., bold day labels and key constraints).\n"
+    "11. Hard limit: output must be no more than 400 words.\n"
+    "12. Omit routine operational detail unless it is safety-critical.\n"
+    "13. Content balance: keep both trip description and safety; do not produce a safety-only summary.\n"
+    "14. For each Day bullet, include (if available): site/location name and marine life highlight or notable dive feature (e.g., wall, coral garden, wreck, drift, visibility/current pattern).\n"
+    "15. Limit safety wording to one short clause per day unless a concrete violation requires more detail.\n"
+    "16. If exact site names are missing, infer realistic local dive areas from the itinerary/search context.\n"
     "Itinerary to review:\n{itinerary_text}\n"
 )
 

@@ -1,6 +1,6 @@
 import re
 import structlog
-from typing import Optional
+from typing import Optional, Any
 from constants import (
     MAX_INPUT_LENGTH,
     INJECTION_PATTERNS,
@@ -77,3 +77,8 @@ def validate_trip_duration(days: Optional[int]) -> bool:
     if days is None:
         return True
     return isinstance(days, int) and MIN_TRIP_DAYS <= days <= MAX_TRIP_DAYS
+
+def sanitize_text_for_model(value: Any) -> str:
+    """Coerce text into JSON-safe UTF-8 before passing back into model messages."""
+    text = value if isinstance(value, str) else str(value)
+    return text.encode("utf-8", "ignore").decode("utf-8")

@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional, Generator, Tuple, Union, Literal, Any
 import structlog
-from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, ToolMessage
 from langchain_core.runnables.config import RunnableConfig
 from langchain_community.callbacks import get_openai_callback
 
@@ -85,6 +85,8 @@ def scuba_diving_trip_planning_agent(
     full_response = ""
     emitted_all_collected = False
     emitted_trip_header = False
+    safety_validation_result_ready = False
+    safety_tool_call_ids: set[str] = set()
 
     with get_openai_callback() as cb:
         for event in stream:
@@ -111,11 +113,18 @@ def scuba_diving_trip_planning_agent(
                 messages = chunk.get("messages", [])
                 if messages:
                     last_msg = messages[-1]
+                    if isinstance(last_msg, ToolMessage):
+                        tool_call_id = getattr(last_msg, "tool_call_id", None)
+                        if tool_call_id in safety_tool_call_ids:
+                            safety_validation_result_ready = True
                     if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
                         for tc in last_msg.tool_calls:
                             if tc["name"] in ["search_tavily"]:
                                 yield ("status", STATUS_TRIP_GENERATING)
                             elif tc["name"] == "validate_safety_with_rag":
+                                tc_id = tc.get("id")
+                                if tc_id:
+                                    safety_tool_call_ids.add(tc_id)
                                 yield ("status", STATUS_TRIP_VALIDATING)
 
             elif mode == "messages":
@@ -123,6 +132,10 @@ def scuba_diving_trip_planning_agent(
                 if isinstance(msg_chunk, AIMessageChunk) and msg_chunk.content:
                     text_content = msg_chunk.content
                     if isinstance(text_content, str):
+                        # Once all trip fields are collected, suppress any draft text that may
+                        # be emitted before/while safety validation runs.
+                        if emitted_all_collected and not safety_validation_result_ready:
+                            continue
                         if emitted_all_collected and not emitted_trip_header:
                             from constants import SUMMARY_DISPLAY
 
