@@ -2,7 +2,7 @@ import structlog
 import tenacity
 from ratelimit import limits, sleep_and_retry
 from typing_extensions import TypedDict
-from typing import Dict, Any, Optional, Annotated, Callable
+from typing import Dict, Any, Optional, Annotated, Callable, cast
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AnyMessage, ToolMessage
@@ -83,9 +83,8 @@ def scalar_reducer(a: Any, b: Any) -> Any:
     return b if b is not None else a
 
 
-class AgentState(TypedDict, total=False):
+class Trip_Plan_Schema(TypedDict, total=False):
     """Structured Agent State"""
-
     messages: Annotated[list[AnyMessage], add_messages]
     certified: Annotated[Optional[bool], certified_reducer]
     certification_type: Annotated[Optional[str], scalar_reducer]
@@ -331,7 +330,7 @@ memory = MemorySaver()
 react_agent = create_agent(
     model=plan_trip_llm,
     tools=agent_tools,
-    state_schema=AgentState,
+    state_schema=Trip_Plan_Schema,
     system_prompt=SYSTEM_PROMPT,
     middleware=[enforce_tool_sequence],
     checkpointer=memory,
@@ -347,4 +346,4 @@ react_agent = create_agent(
 @limits(calls=10, period=60)
 def invoke_react_agent(input_state: dict | None, config: RunnableConfig) -> dict:
     """Invoke the react agent and return the final state."""
-    return react_agent.invoke(input_state, config=config)
+    return react_agent.invoke(cast(Any, input_state), config=config)
