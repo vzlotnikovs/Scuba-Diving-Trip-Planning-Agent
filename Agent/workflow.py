@@ -1,4 +1,5 @@
 import structlog
+import tenacity
 from typing_extensions import TypedDict
 from typing import Dict, Any, Optional, Annotated, Callable
 
@@ -32,8 +33,10 @@ from constants import (
 
 log = structlog.get_logger()
 
-plan_trip_llm = ChatOpenAI(model=LLM_MODEL, temperature=PLAN_TRIP_TEMPERATURE)
-safety_check_llm = ChatOpenAI(model=LLM_MODEL, temperature=SAFETY_CHECK_TEMPERATURE)
+# max_retries uses the OpenAI client's built-in exponential backoff, which
+# correctly handles Retry-After headers from rate-limit responses.
+plan_trip_llm = ChatOpenAI(model=LLM_MODEL, temperature=PLAN_TRIP_TEMPERATURE, max_retries=3)
+safety_check_llm = ChatOpenAI(model=LLM_MODEL, temperature=SAFETY_CHECK_TEMPERATURE, max_retries=3)
 
 tavily = TavilySearch(
     max_results=TAVILY_SEARCH_MAX_RESULTS,
@@ -41,6 +44,16 @@ tavily = TavilySearch(
     search_depth=TAVILY_SEARCH_SEARCH_DEPTH,
     temperature=TAVILY_SEARCH_TEMPERATURE,
 )
+
+
+@tenacity.retry(
+    wait=tenacity.wait_exponential(multiplier=1, min=2, max=10),
+    stop=tenacity.stop_after_attempt(3),
+    reraise=True,
+)
+def _invoke_tavily(query: str) -> str:
+    """Non-generator wrapper around tavily.invoke() so Tenacity retry works correctly."""
+    return tavily.invoke(query)
 
 def certified_reducer(a: Optional[bool], b: Optional[bool]) -> Optional[bool]:
     """Safety-first reducer: disqualification (False) is permanent and always wins."""
@@ -211,7 +224,7 @@ def search_tavily(runtime: ToolRuntime) -> str:
         nitrox="Nitrox / Enriched Air" if nitrox else "Regular Air",
     )
     try:
-        results = tavily.invoke(query)
+        results = _invoke_tavily(query)
         return sanitize_text_for_model(results)
     except Exception as e:
         log.exception("search_tavily_error", query=query, error=str(e))
