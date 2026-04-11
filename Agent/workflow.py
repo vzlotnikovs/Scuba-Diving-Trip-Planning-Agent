@@ -32,29 +32,21 @@ from constants import (
 
 log = structlog.get_logger()
 
+plan_trip_llm = ChatOpenAI(model=LLM_MODEL, temperature=PLAN_TRIP_TEMPERATURE)
+safety_check_llm = ChatOpenAI(model=LLM_MODEL, temperature=SAFETY_CHECK_TEMPERATURE)
 
-
-
-
-# Standard LLM for the agent ReAct loop
-_llm = ChatOpenAI(model=LLM_MODEL, temperature=PLAN_TRIP_TEMPERATURE)
-_safety_llm = ChatOpenAI(model=LLM_MODEL, temperature=SAFETY_CHECK_TEMPERATURE)
-
-# Tavily client for the custom tool
-_tavily = TavilySearch(
+tavily = TavilySearch(
     max_results=TAVILY_SEARCH_MAX_RESULTS,
     include_answer=TAVILY_SEARCH_INCLUDE_ANSWER,
     search_depth=TAVILY_SEARCH_SEARCH_DEPTH,
     temperature=TAVILY_SEARCH_TEMPERATURE,
 )
 
-
 def certified_reducer(a: Optional[bool], b: Optional[bool]) -> Optional[bool]:
     """Safety-first reducer: disqualification (False) is permanent and always wins."""
     if a is False or b is False:
         return False
     return b if b is not None else a
-
 
 def dict_merge_reducer(
     a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]
@@ -66,11 +58,9 @@ def dict_merge_reducer(
         return a
     return {**a, **b}
 
-
 def scalar_reducer(a: Any, b: Any) -> Any:
     """Prefer the incoming non-None value; fall back to the existing value."""
     return b if b is not None else a
-
 
 class AgentState(TypedDict, total=False):
     """Structured Agent State"""
@@ -87,7 +77,7 @@ class AgentState(TypedDict, total=False):
     total_cost: Annotated[Optional[float], scalar_reducer]
 
 
-@tool
+@tool(parse_docstring=True)
 def save_trip_summary(
     runtime: ToolRuntime,
     destination: Optional[str] = None,
@@ -96,7 +86,21 @@ def save_trip_summary(
     certification_type: Optional[str] = None,
     nitrox: Optional[bool] = None,
 ) -> Command:
-    """Save the user's trip preferences. Call this tool progressively whenever you learn ANY new information. You do not need all fields at once."""
+    """Save the user's trip preferences to state. Call this progressively whenever
+    you learn ANY new information — you do not need all fields at once.
+    If certification_type indicates the user is not certified (e.g. 'None', 'N/a',
+    'Never dived'), this tool will automatically disqualify them — do NOT also
+    call `disqualify_user`.
+
+    Args:
+        destination: The dive trip destination (e.g. 'Maldives', 'Great Barrier Reef').
+        trip_month: The month of the planned trip (e.g. 'June', 'October').
+        trip_duration: The length of the trip in whole days (must be between 1 and 14).
+        certification_type: The diver's certification level (e.g. 'Open Water', 'AOW',
+            'Divemaster'). Use 'None' or 'N/a' if the user is not certified.
+        nitrox: Whether the diver will use Nitrox (enriched air). True for Nitrox,
+            False for regular air.
+    """
     state = runtime.state
     update_dict = {}
 
@@ -131,7 +135,6 @@ def save_trip_summary(
     if nitrox is not None:
         update_dict["nitrox"] = nitrox
 
-    # Generate new trip_summary locally to push up to state
     old_summary = state.get("trip_summary") or {}
     new_summary = {**old_summary}
     for k in TRIP_SUMMARY_KEYS:
@@ -143,12 +146,12 @@ def save_trip_summary(
     is_complete = all(new_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS)
     if is_complete:
         success_msg = (
-            f"Successfully updated trip preferences. All 5 required fields are collected: {new_summary}. "
+            f"Successfully updated trip details. All 5 required fields are collected: {new_summary}. "
             "CRITICAL INSTRUCTION: DO NOT ask the user for any special preferences or permission to proceed. "
-            "You MUST IMMEDIATELY run `search_tavily` and `validate_safety_with_rag` in this exact turn."
+            "You MUST IMMEDIATELY run `search_tavily` and `validate_safety_with_rag` tools."
         )
     else:
-        success_msg = f"Successfully updated trip preferences. Current known fields in summary: {new_summary}"
+        success_msg = f"Successfully updated trip details. Current known fields in summary: {new_summary}"
 
     log.info("save_trip_summary_called", updates=new_summary)
 
@@ -167,7 +170,8 @@ def save_trip_summary(
 
 @tool
 def disqualify_user(runtime: ToolRuntime) -> Command:
-    """Call this tool IMMEDIATELY if the user reveals they are not a certified scuba diver."""
+    """Call this tool IMMEDIATELY if the user reveals they are not a certified scuba diver.
+    Do NOT call `save_trip_summary` in the same turn."""
     log.info("disqualify_user_called")
     return Command(
         update={
@@ -184,9 +188,12 @@ def disqualify_user(runtime: ToolRuntime) -> Command:
 
 @tool
 def search_tavily(runtime: ToolRuntime) -> str:
-    """Search the web for scuba diving site recommendations. ONLY call this once all trip preferences are gathered.
-    The query MUST follow this exact format: 'best scuba diving sites in {destination} in {trip_month} for {certification_type} divers'.
-    Do NOT add specific site names, liveaboard options, or any other detail not explicitly provided by the user."""
+    """Search the web for scuba diving site recommendations.
+    ONLY call this once all 5 trip preference fields are collected (destination, month,
+    duration, certification type, nitrox). This tool reads trip details directly from
+    state — do NOT pass them as arguments.
+    Do NOT add specific site names, liveaboard options, or any detail not explicitly
+    provided by the user to the internal query."""
     log.info("search_tavily_called")
 
     state = runtime.state or {}
@@ -203,13 +210,24 @@ def search_tavily(runtime: ToolRuntime) -> str:
         trip_duration=trip_duration,
         nitrox="Nitrox / Enriched Air" if nitrox else "Regular Air",
     )
-    results = _tavily.invoke(query)
+    results = tavily.invoke(query)
     return sanitize_text_for_model(results)
 
 
-@tool
+@tool(parse_docstring=True)
 def validate_safety_with_rag(itinerary_draft: str, nitrox: bool) -> str:
-    """Validate a draft itinerary against safety guidelines using RAG. ONLY call this once you have drafted a full itinerary."""
+    """Validate a draft itinerary against DAN/PADI safety guidelines using RAG.
+    ONLY call this once you have drafted a complete, day-by-day itinerary from the
+    Tavily search results. Pass the full itinerary text as `itinerary_draft`.
+    Your final response to the user MUST be exactly and only this tool's output —
+    do not paraphrase, summarise, or add anything else.
+
+    Args:
+        itinerary_draft: The complete draft itinerary text to validate, written as a
+            full day-by-day dive plan including sites, depths, and any relevant details.
+        nitrox: Whether the diver is using Nitrox (enriched air). True for Nitrox,
+            False for regular air. Must match what was saved in trip preferences.
+    """
     log.info("validate_safety_with_rag_called", nitrox=nitrox)
     gas_context = "Nitrox (enriched air)" if nitrox else "Regular air"
     rag = RAGSystem.get_instance()
@@ -225,7 +243,7 @@ def validate_safety_with_rag(itinerary_draft: str, nitrox: bool) -> str:
         retrieved_context=retrieved_context,
     )
 
-    result = _safety_llm.invoke(safety_check_prompt)
+    result = safety_check_llm.invoke(safety_check_prompt)
     if hasattr(result, "content"):
         return sanitize_text_for_model(result.content)
 
@@ -247,7 +265,6 @@ def enforce_tool_sequence(
             is_complete = False
             break
 
-    # Strictly enforce logical paths
     if state.get("certified") is False:
         visible_tools = ["disqualify_user"]
     elif not is_complete:
@@ -275,7 +292,7 @@ agent_tools = [
 memory = MemorySaver()
 
 react_graph = create_agent(
-    model=_llm,
+    model=plan_trip_llm,
     tools=agent_tools,
     state_schema=AgentState,
     system_prompt=SYSTEM_PROMPT,

@@ -194,7 +194,7 @@ def main() -> None:
 
     if is_complete_trip and not chat_disabled:
         st.info(
-            "Does this itinerary meet your expectations? Reply to modify or re-check."
+            "Does this itinerary meet your expectations? Reply to modify or ask a follow-up question."
         )
 
     prompt = st.chat_input(

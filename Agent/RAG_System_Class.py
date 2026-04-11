@@ -31,7 +31,6 @@ if not OPENAI_API_KEY:
 
 log = structlog.get_logger()
 
-
 class RAGSystem:
     """Class managing the Retrieval-Augmented Generation (RAG) system.
 
