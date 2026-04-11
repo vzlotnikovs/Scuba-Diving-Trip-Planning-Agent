@@ -245,8 +245,6 @@ def main() -> None:
                             response_placeholder.markdown(streamed_response)
                         elif event[0] == "done":
                             _, final_text, trip_summary, certified = event
-
-                            # Fallback if streaming didn't catch everything
                             if final_text and not streamed_response:
                                 streamed_response = final_text
                                 response_placeholder.markdown(streamed_response)

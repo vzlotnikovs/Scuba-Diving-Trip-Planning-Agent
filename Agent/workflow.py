@@ -123,7 +123,7 @@ def save_trip_summary(
             False for regular air.
     """
     state = runtime.state
-    update_dict = {}
+    update_dict: Dict[str, Any] = {}
 
     if destination is not None:
         update_dict["destination"] = destination
@@ -291,7 +291,8 @@ def enforce_tool_sequence(
 ) -> ModelResponse:
     """Middleware to enforce that tools are only available when their prerequisites are met."""
     state = request.state
-    summary = state.get("trip_summary") or {}
+    raw_summary = state.get("trip_summary")
+    summary: Dict[str, Any] = raw_summary if isinstance(raw_summary, dict) else {}
 
     is_complete = True
     for key in TRIP_SUMMARY_KEYS:
@@ -311,7 +312,9 @@ def enforce_tool_sequence(
             "validate_safety_with_rag",
         ]
 
-    relevant_tools = [t for t in request.tools if t.name in visible_tools]
+    relevant_tools = [
+        t for t in request.tools if getattr(t, "name", None) in visible_tools
+    ]
     return handler(request.override(tools=relevant_tools))
 
 

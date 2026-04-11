@@ -25,7 +25,7 @@ def scuba_diving_trip_planning_agent(
         Tuple[Literal["status"], str],
         Tuple[Literal["trip_summary"], dict],
         Tuple[Literal["token"], str],
-        Tuple[Literal["done"], str, dict, Optional[bool], Optional[bool]],
+        Tuple[Literal["done"], str, dict, Optional[bool]],
     ],
     None,
     None,
