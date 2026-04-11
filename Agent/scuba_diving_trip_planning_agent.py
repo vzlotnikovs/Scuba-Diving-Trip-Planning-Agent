@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Generator, Tuple, Union, Literal, Any
+from typing import List, Dict, Optional, Generator, Tuple, Union, Literal, Any, cast
 import structlog
 from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, ToolMessage
 from langchain_core.runnables.config import RunnableConfig
@@ -61,15 +61,16 @@ def scuba_diving_trip_planning_agent(
         return
 
     input_state: Dict[str, Any] = {"messages": [HumanMessage(content=sanitized)]}
+    stream_mode: list[Literal["values", "messages"]] = ["values", "messages"]
 
     last_state: Optional[Dict[str, Any]] = None
     last_trip_summary = None
 
     try:
         stream = react_agent.stream(
-            input_state,
+            cast(Any, input_state),
             config=config,
-            stream_mode=["values", "messages"],
+            stream_mode=stream_mode,
         )
     except Exception as e:
         log.exception("agent_stream_init_error", error=str(e))
