@@ -74,6 +74,7 @@ def validate_trip_duration(days: Optional[int]) -> bool:
         return True
     return isinstance(days, int) and MIN_TRIP_DAYS <= days <= MAX_TRIP_DAYS
 
+
 def sanitize_text_for_model(value: Any) -> str:
     """Coerce text into JSON-safe UTF-8 before passing back into model messages."""
     text = value if isinstance(value, str) else str(value)

@@ -41,7 +41,7 @@ def scuba_diving_trip_planning_agent(
             - ("status", message): Interim UX status messages.
             - ("trip_summary", summary_dict): The current extracted trip details.
             - ("token", text): Streaming token output.
-            - ("done", response, trip_summary, certified, awaiting_user_feedback): The final outcome.
+            - ("done", response, trip_summary, certified): The final outcome.
     """
     if not history:
         yield ("done", "No history provided.", {}, None)
@@ -98,7 +98,8 @@ def scuba_diving_trip_planning_agent(
                         last_trip_summary = current_summary.copy()
                         yield ("trip_summary", last_trip_summary)
                         is_complete = all(
-                            last_trip_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS
+                            last_trip_summary.get(k) is not None
+                            for k in TRIP_SUMMARY_KEYS
                         )
                         if is_complete and not emitted_all_collected:
                             if chunk.get("certified") is not False:
@@ -127,7 +128,10 @@ def scuba_diving_trip_planning_agent(
                     if isinstance(msg_chunk, AIMessageChunk) and msg_chunk.content:
                         text_content = msg_chunk.content
                         if isinstance(text_content, str):
-                            if emitted_all_collected and not safety_validation_result_ready:
+                            if (
+                                emitted_all_collected
+                                and not safety_validation_result_ready
+                            ):
                                 continue
                             if emitted_all_collected and not emitted_trip_header:
                                 summary = last_trip_summary or {}

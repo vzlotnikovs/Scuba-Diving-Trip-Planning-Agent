@@ -31,6 +31,7 @@ if not OPENAI_API_KEY:
 
 log = structlog.get_logger()
 
+
 class RAGSystem:
     """Class managing the Retrieval-Augmented Generation (RAG) system.
 
@@ -190,7 +191,9 @@ class RAGSystem:
                     persist_directory=PERSIST_DIR,
                 )
         except Exception as e:
-            log.warning("vector_store_load_failed", persist_dir=PERSIST_DIR, error=str(e))
+            log.warning(
+                "vector_store_load_failed", persist_dir=PERSIST_DIR, error=str(e)
+            )
 
         log.info("vector_store_creating", persist_dir=PERSIST_DIR)
         return self.create_vector_store(
@@ -264,7 +267,9 @@ class RAGSystem:
             raise RuntimeError("vector_store must be initialized")
 
         try:
-            retrieved_sources = self.vector_store.similarity_search(query, k=self.K_CONSTANT)
+            retrieved_sources = self.vector_store.similarity_search(
+                query, k=self.K_CONSTANT
+            )
         except Exception as e:
             log.exception("retrieve_context_error", error=str(e))
             raise RuntimeError(f"Vector store similarity search failed: {e}")
@@ -279,4 +284,3 @@ class RAGSystem:
             content = source.page_content.replace("\n", " ")
             bullet_points.append(f"Source: {src}\n {content}")
         return "\n".join(bullet_points)
-

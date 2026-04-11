@@ -35,10 +35,12 @@ from constants import (
 
 log = structlog.get_logger()
 
-# max_retries uses the OpenAI client's built-in exponential backoff, which
-# correctly handles Retry-After headers from rate-limit responses.
-plan_trip_llm = ChatOpenAI(model=LLM_MODEL, temperature=PLAN_TRIP_TEMPERATURE, max_retries=3)
-safety_check_llm = ChatOpenAI(model=LLM_MODEL, temperature=SAFETY_CHECK_TEMPERATURE, max_retries=3)
+plan_trip_llm = ChatOpenAI(
+    model=LLM_MODEL, temperature=PLAN_TRIP_TEMPERATURE, max_retries=3
+)
+safety_check_llm = ChatOpenAI(
+    model=LLM_MODEL, temperature=SAFETY_CHECK_TEMPERATURE, max_retries=3
+)
 
 tavily = TavilySearch(
     max_results=TAVILY_SEARCH_MAX_RESULTS,
@@ -57,11 +59,13 @@ def _invoke_tavily(query: str) -> str:
     """Non-generator wrapper around tavily.invoke() so Tenacity retry works correctly."""
     return tavily.invoke(query)
 
+
 def certified_reducer(a: Optional[bool], b: Optional[bool]) -> Optional[bool]:
     """Safety-first reducer: disqualification (False) is permanent and always wins."""
     if a is False or b is False:
         return False
     return b if b is not None else a
+
 
 def dict_merge_reducer(
     a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]
@@ -73,9 +77,11 @@ def dict_merge_reducer(
         return a
     return {**a, **b}
 
+
 def scalar_reducer(a: Any, b: Any) -> Any:
     """Prefer the incoming non-None value; fall back to the existing value."""
     return b if b is not None else a
+
 
 class AgentState(TypedDict, total=False):
     """Structured Agent State"""
@@ -230,7 +236,9 @@ def search_tavily(runtime: ToolRuntime) -> str:
         return sanitize_text_for_model(results)
     except Exception as e:
         log.exception("search_tavily_error", query=query, error=str(e))
-        return f"Web search failed: {e}. Please inform the user and ask them to try again."
+        return (
+            f"Web search failed: {e}. Please inform the user and ask them to try again."
+        )
 
 
 @tool(parse_docstring=True)
@@ -335,6 +343,5 @@ react_agent = create_agent(
 @sleep_and_retry
 @limits(calls=10, period=60)
 def invoke_react_agent(input_state: dict | None, config: RunnableConfig) -> dict:
-    """Invoke the react agent and return the final state.
-    """
+    """Invoke the react agent and return the final state."""
     return react_agent.invoke(input_state, config=config)
