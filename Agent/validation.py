@@ -1,68 +1,14 @@
 import re
 import structlog
-from typing import Optional, TypedDict
-from langchain_openai import ChatOpenAI
+from typing import Optional, Any
 from constants import (
-    LLM_MODEL,
     MAX_INPUT_LENGTH,
     INJECTION_PATTERNS,
-    RELEVANCE_CHECK_TEMPERATURE,
-    RELEVANCE_CHECK_PROMPT,
-    RELEVANCE_ERROR_MESSAGE,
     MIN_TRIP_DAYS,
     MAX_TRIP_DAYS,
 )
 
 log = structlog.get_logger()
-_llm_relevance = ChatOpenAI(model=LLM_MODEL, temperature=RELEVANCE_CHECK_TEMPERATURE)
-
-
-class RelevanceSchema(TypedDict, total=False):
-    relevant: bool
-    reason: Optional[str]
-
-
-def check_relevance(sanitized: str) -> tuple[bool, int, float]:
-    """Check if the sanitized user input is relevant to scuba diving trip planning.
-
-    Uses an LLM to determine if the query aligns with the agent's purpose. Fails
-    open (returns True) if the LLM call encounters an error.
-
-    Args:
-        sanitized (str): The sanitized user input string.
-
-    Returns:
-        tuple[bool, int, float]: A tuple containing:
-            - is_relevant (bool): True if relevant or on error, False otherwise.
-            - tokens (int): The number of tokens used in the LLM check.
-            - cost (float): The estimated cost of the LLM check in USD.
-    """
-    from langchain_community.callbacks import get_openai_callback
-
-    try:
-        structured_llm = _llm_relevance.with_structured_output(RelevanceSchema)
-
-        with get_openai_callback() as cb:
-            result = structured_llm.invoke(
-                RELEVANCE_CHECK_PROMPT.format(query=sanitized)
-            )
-            tokens = cb.total_tokens
-            cost = cb.total_cost
-
-        if isinstance(result, dict) and result.get("relevant") is False:
-            log.info(
-                "relevance_check_failed",
-                reason=result.get("reason", "none"),
-                tokens=tokens,
-                cost=cost,
-            )
-            return False, tokens, cost
-
-        log.info("relevance_check_passed", tokens=tokens, cost=cost)
-        return True, tokens, cost
-    except Exception as e:
-        log.warning("relevance_check_error", error=str(e))
-        return True, 0, 0.0
 
 
 def validate_user_text(
@@ -100,8 +46,6 @@ def validate_user_text(
             False,
             None,
             f"Query too long. Please limit to {MAX_INPUT_LENGTH} characters.",
-            0,
-            0.0,
         )
 
     sanitized = re.sub(r"\s+", " ", content.strip())
@@ -116,15 +60,9 @@ def validate_user_text(
                 False,
                 None,
                 "Potential prompt injection detected. Please only use this agent for its intended purpose (scuba diving trip planning).",
-                0,
-                0.0,
             )
 
-    is_relevant, tokens, cost = check_relevance(sanitized)
-    if not is_relevant:
-        return False, None, RELEVANCE_ERROR_MESSAGE, tokens, cost
-
-    return True, sanitized, None, tokens, cost
+    return True, sanitized, None
 
 
 def validate_trip_duration(days: Optional[int]) -> bool:
@@ -139,3 +77,8 @@ def validate_trip_duration(days: Optional[int]) -> bool:
     if days is None:
         return True
     return isinstance(days, int) and MIN_TRIP_DAYS <= days <= MAX_TRIP_DAYS
+
+def sanitize_text_for_model(value: Any) -> str:
+    """Coerce text into JSON-safe UTF-8 before passing back into model messages."""
+    text = value if isinstance(value, str) else str(value)
+    return text.encode("utf-8", "ignore").decode("utf-8")

@@ -182,6 +182,12 @@ def create_pdf_chat(messages: List[Dict[str, str]]) -> bytes:
         story.extend(_content_to_flowables(content, content_style))
         story.append(Spacer(1, 12))
 
-    doc.build(story)
+    try:
+        doc.build(story)
+    except Exception as e:
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        doc.build([Paragraph(f"Export error: {e}", styles["Normal"])])
+
     buffer.seek(0)
     return buffer.getvalue()

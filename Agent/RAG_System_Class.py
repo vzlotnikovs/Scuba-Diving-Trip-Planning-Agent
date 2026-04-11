@@ -6,10 +6,6 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
-from langchain.tools import tool
-from langgraph.checkpoint.memory import MemorySaver
-from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
 from constants import (
@@ -25,9 +21,6 @@ from constants import (
     COLLECTION_NAME,
     PERSIST_DIR,
     K_CONSTANT,
-    RAG_SYSTEM_PROMPT,
-    TIMEOUT,
-    MAX_RETRIES,
 )
 
 os.environ["USER_AGENT"] = USER_AGENT
@@ -38,12 +31,10 @@ if not OPENAI_API_KEY:
 
 log = structlog.get_logger()
 
-
 class RAGSystem:
     """Class managing the Retrieval-Augmented Generation (RAG) system.
 
-    Handles loading PDF documents, creating/loading Chroma vector stores,
-    and initializing the retrieval agent.
+    Handles loading PDF documents and creating/loading Chroma vector stores.
     """
 
     _instance = None
@@ -56,7 +47,6 @@ class RAGSystem:
         """
         self.sources: Optional[List[Any]] = None
         self.vector_store: Optional[Chroma] = None
-        self.agent: Any = None
 
         self.SUB_DIR = SUB_DIR
         self.PDF_FILENAME_1 = PDF_FILENAME_1
@@ -68,7 +58,6 @@ class RAGSystem:
         self.COLLECTION_NAME = COLLECTION_NAME
         self.PERSIST_DIR = PERSIST_DIR
         self.K_CONSTANT = K_CONSTANT
-        self.RAG_SYSTEM_PROMPT = RAG_SYSTEM_PROMPT
 
     @classmethod
     def get_instance(cls) -> "RAGSystem":
@@ -85,8 +74,7 @@ class RAGSystem:
     def _initialize(self) -> None:
         """Lazy initialization of system resources.
 
-        Loads PDF sources, initializes the Chroma vector store, and creates
-        the retrieval agent on first use.
+        Loads PDF sources and initializes the Chroma vector store on first use.
         """
         if self.sources is None:
             self.sources = self.load_source_content(
@@ -100,23 +88,10 @@ class RAGSystem:
                 self.CHUNK_SIZE,
                 self.CHUNK_OVERLAP,
             )
-        if self.agent is None:
-            self.agent = create_agent(
-                model=ChatOpenAI(
-                    model=self.LLM_MODEL,
-                    streaming=True,
-                    timeout=TIMEOUT,
-                    max_retries=MAX_RETRIES,
-                ),
-                tools=[retrieve_context],
-                system_prompt=self.RAG_SYSTEM_PROMPT,
-                checkpointer=MemorySaver(),
-            )
-            log.info(
-                "rag_agent_initialized",
-                model=self.LLM_MODEL,
-                collection=self.COLLECTION_NAME,
-            )
+        log.info(
+            "rag_retrieval_initialized",
+            collection=self.COLLECTION_NAME,
+        )
 
     def load_source_content(
         self,
@@ -206,13 +181,16 @@ class RAGSystem:
         persist_path = Path(PERSIST_DIR)
         embed_model = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
 
-        if persist_path.exists() and any(persist_path.iterdir()):
-            log.info("vector_store_loaded", persist_dir=PERSIST_DIR)
-            return Chroma(
-                collection_name=COLLECTION_NAME,
-                embedding_function=embed_model,
-                persist_directory=PERSIST_DIR,
-            )
+        try:
+            if persist_path.exists() and any(persist_path.iterdir()):
+                log.info("vector_store_loaded", persist_dir=PERSIST_DIR)
+                return Chroma(
+                    collection_name=COLLECTION_NAME,
+                    embedding_function=embed_model,
+                    persist_directory=PERSIST_DIR,
+                )
+        except Exception as e:
+            log.warning("vector_store_load_failed", persist_dir=PERSIST_DIR, error=str(e))
 
         log.info("vector_store_creating", persist_dir=PERSIST_DIR)
         return self.create_vector_store(
@@ -280,22 +258,17 @@ class RAGSystem:
             log.exception("vector_store_creation_error", error=str(e))
             raise RuntimeError(f"[ERROR] Error creating vector store: {e}")
 
-
-@tool
-def retrieve_context(query: str) -> str:
-    """Retrieve information to help answer a query.
-
-    Args:
-        query (str): The user query.
-
-    Returns:
-        str: A formatted string containing retrieved documents with their sources.
-    """
-    try:
-        rag = RAGSystem.get_instance()
-        if rag.vector_store is None:
+    def retrieve_context(self, query: str) -> str:
+        """Retrieve relevant safety context for a query."""
+        if self.vector_store is None:
             raise RuntimeError("vector_store must be initialized")
-        retrieved_sources = rag.vector_store.similarity_search(query, k=rag.K_CONSTANT)
+
+        try:
+            retrieved_sources = self.vector_store.similarity_search(query, k=self.K_CONSTANT)
+        except Exception as e:
+            log.exception("retrieve_context_error", error=str(e))
+            raise RuntimeError(f"Vector store similarity search failed: {e}")
+
         log.info(
             "retrieve_context_complete",
             results_count=len(retrieved_sources),
@@ -306,5 +279,4 @@ def retrieve_context(query: str) -> str:
             content = source.page_content.replace("\n", " ")
             bullet_points.append(f"Source: {src}\n {content}")
         return "\n".join(bullet_points)
-    except Exception as e:
-        raise RuntimeError(f"[ERROR] Error retrieving context: {e}")
+
