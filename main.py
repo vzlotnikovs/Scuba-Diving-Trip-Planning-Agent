@@ -147,13 +147,17 @@ def main() -> None:
                     mime="text/plain",
                 )
             else:
-                pdf_bytes = create_pdf_chat(st.session_state.messages)
-                st.download_button(
-                    label="Download PDF",
-                    data=pdf_bytes,
-                    file_name=f"dive_chat_{export_ts}.pdf",
-                    mime="application/pdf",
-                )
+                try:
+                    pdf_bytes = create_pdf_chat(st.session_state.messages)
+                    st.download_button(
+                        label="Download PDF",
+                        data=pdf_bytes,
+                        file_name=f"dive_chat_{export_ts}.pdf",
+                        mime="application/pdf",
+                    )
+                except Exception as e:
+                    log.exception("pdf_export_error")
+                    st.error(f"PDF export failed: {e}")
 
         if st.button("💬 New Chat", type="secondary"):
             log.info(

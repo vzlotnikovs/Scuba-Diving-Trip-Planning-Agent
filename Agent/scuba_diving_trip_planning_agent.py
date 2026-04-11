@@ -90,75 +90,79 @@ def scuba_diving_trip_planning_agent(
 
     with get_openai_callback() as cb:
         for event in stream:
-            if not isinstance(event, tuple) or len(event) != 2:
+            try:
+                if not isinstance(event, tuple) or len(event) != 2:
+                    continue
+
+                mode, chunk = event
+
+                if mode == "values" and isinstance(chunk, dict):
+                    last_state = chunk
+
+                    current_summary = chunk.get("trip_summary")
+                    if current_summary and current_summary != last_trip_summary:
+                        last_trip_summary = current_summary.copy()
+                        yield ("trip_summary", last_trip_summary)
+                        is_complete = all(
+                            last_trip_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS
+                        )
+                        if is_complete and not emitted_all_collected:
+                            if chunk.get("certified") is not False:
+                                yield ("status", STATUS_ALL_COLLECTED)
+                                emitted_all_collected = True
+
+                    messages = chunk.get("messages", [])
+                    if messages:
+                        last_msg = messages[-1]
+                        if isinstance(last_msg, ToolMessage):
+                            tool_call_id = getattr(last_msg, "tool_call_id", None)
+                            if tool_call_id in safety_tool_call_ids:
+                                safety_validation_result_ready = True
+                        if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
+                            for tc in last_msg.tool_calls:
+                                if tc["name"] in ["search_tavily"]:
+                                    yield ("status", STATUS_TRIP_GENERATING)
+                                elif tc["name"] == "validate_safety_with_rag":
+                                    tc_id = tc.get("id")
+                                    if tc_id:
+                                        safety_tool_call_ids.add(tc_id)
+                                    yield ("status", STATUS_TRIP_VALIDATING)
+
+                elif mode == "messages":
+                    msg_chunk = chunk[0]
+                    if isinstance(msg_chunk, AIMessageChunk) and msg_chunk.content:
+                        text_content = msg_chunk.content
+                        if isinstance(text_content, str):
+                            # Once all trip fields are collected, suppress any draft text that may
+                            # be emitted before/while safety validation runs.
+                            if emitted_all_collected and not safety_validation_result_ready:
+                                continue
+                            if emitted_all_collected and not emitted_trip_header:
+                                from constants import SUMMARY_DISPLAY
+
+                                summary = last_trip_summary or {}
+                                d = summary.get("destination", "")
+                                m = summary.get("trip_month", "")
+                                dur = summary.get("trip_duration", "")
+                                c = summary.get("certification_type", "")
+                                n = summary.get("nitrox")
+                                trip_header = (
+                                    f"{SUMMARY_DISPLAY['destination'][0]} **{d}** | "
+                                    f"{SUMMARY_DISPLAY['trip_month'][0]} **{m}** | "
+                                    f"{SUMMARY_DISPLAY['trip_duration'][0]} **{dur} days** | "
+                                    f"{SUMMARY_DISPLAY['certification_type'][0]} **{c}** | "
+                                    f"{SUMMARY_DISPLAY['nitrox'][0]} Nitrox: **{'Yes' if n else 'No'}**\n\n"
+                                    f"**Your Dive Trip Plan:**\n\n"
+                                )
+                                full_response += trip_header
+                                yield ("token", trip_header)
+                                emitted_trip_header = True
+
+                            full_response += text_content
+                            yield ("token", text_content)
+            except Exception as e:
+                log.exception("agent_stream_event_error", error=str(e))
                 continue
-
-            mode, chunk = event
-
-            if mode == "values" and isinstance(chunk, dict):
-                last_state = chunk
-
-                current_summary = chunk.get("trip_summary")
-                if current_summary and current_summary != last_trip_summary:
-                    last_trip_summary = current_summary.copy()
-                    yield ("trip_summary", last_trip_summary)
-                    is_complete = all(
-                        last_trip_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS
-                    )
-                    if is_complete and not emitted_all_collected:
-                        if chunk.get("certified") is not False:
-                            yield ("status", STATUS_ALL_COLLECTED)
-                            emitted_all_collected = True
-
-                messages = chunk.get("messages", [])
-                if messages:
-                    last_msg = messages[-1]
-                    if isinstance(last_msg, ToolMessage):
-                        tool_call_id = getattr(last_msg, "tool_call_id", None)
-                        if tool_call_id in safety_tool_call_ids:
-                            safety_validation_result_ready = True
-                    if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
-                        for tc in last_msg.tool_calls:
-                            if tc["name"] in ["search_tavily"]:
-                                yield ("status", STATUS_TRIP_GENERATING)
-                            elif tc["name"] == "validate_safety_with_rag":
-                                tc_id = tc.get("id")
-                                if tc_id:
-                                    safety_tool_call_ids.add(tc_id)
-                                yield ("status", STATUS_TRIP_VALIDATING)
-
-            elif mode == "messages":
-                msg_chunk = chunk[0]
-                if isinstance(msg_chunk, AIMessageChunk) and msg_chunk.content:
-                    text_content = msg_chunk.content
-                    if isinstance(text_content, str):
-                        # Once all trip fields are collected, suppress any draft text that may
-                        # be emitted before/while safety validation runs.
-                        if emitted_all_collected and not safety_validation_result_ready:
-                            continue
-                        if emitted_all_collected and not emitted_trip_header:
-                            from constants import SUMMARY_DISPLAY
-
-                            summary = last_trip_summary or {}
-                            d = summary.get("destination", "")
-                            m = summary.get("trip_month", "")
-                            dur = summary.get("trip_duration", "")
-                            c = summary.get("certification_type", "")
-                            n = summary.get("nitrox")
-                            trip_header = (
-                                f"{SUMMARY_DISPLAY['destination'][0]} **{d}** | "
-                                f"{SUMMARY_DISPLAY['trip_month'][0]} **{m}** | "
-                                f"{SUMMARY_DISPLAY['trip_duration'][0]} **{dur} days** | "
-                                f"{SUMMARY_DISPLAY['certification_type'][0]} **{c}** | "
-                                f"{SUMMARY_DISPLAY['nitrox'][0]} Nitrox: **{'Yes' if n else 'No'}**\n\n"
-                                f"**Your Dive Trip Plan:**\n\n"
-                            )
-                            full_response += trip_header
-                            yield ("token", trip_header)
-                            emitted_trip_header = True
-
-                        full_response += text_content
-                        yield ("token", text_content)
 
     if last_state is None:
         last_state = react_graph.get_state(config).values

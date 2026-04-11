@@ -181,13 +181,16 @@ class RAGSystem:
         persist_path = Path(PERSIST_DIR)
         embed_model = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
 
-        if persist_path.exists() and any(persist_path.iterdir()):
-            log.info("vector_store_loaded", persist_dir=PERSIST_DIR)
-            return Chroma(
-                collection_name=COLLECTION_NAME,
-                embedding_function=embed_model,
-                persist_directory=PERSIST_DIR,
-            )
+        try:
+            if persist_path.exists() and any(persist_path.iterdir()):
+                log.info("vector_store_loaded", persist_dir=PERSIST_DIR)
+                return Chroma(
+                    collection_name=COLLECTION_NAME,
+                    embedding_function=embed_model,
+                    persist_directory=PERSIST_DIR,
+                )
+        except Exception as e:
+            log.warning("vector_store_load_failed", persist_dir=PERSIST_DIR, error=str(e))
 
         log.info("vector_store_creating", persist_dir=PERSIST_DIR)
         return self.create_vector_store(
@@ -260,7 +263,12 @@ class RAGSystem:
         if self.vector_store is None:
             raise RuntimeError("vector_store must be initialized")
 
-        retrieved_sources = self.vector_store.similarity_search(query, k=self.K_CONSTANT)
+        try:
+            retrieved_sources = self.vector_store.similarity_search(query, k=self.K_CONSTANT)
+        except Exception as e:
+            log.exception("retrieve_context_error", error=str(e))
+            raise RuntimeError(f"Vector store similarity search failed: {e}")
+
         log.info(
             "retrieve_context_complete",
             results_count=len(retrieved_sources),

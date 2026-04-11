@@ -210,8 +210,12 @@ def search_tavily(runtime: ToolRuntime) -> str:
         trip_duration=trip_duration,
         nitrox="Nitrox / Enriched Air" if nitrox else "Regular Air",
     )
-    results = tavily.invoke(query)
-    return sanitize_text_for_model(results)
+    try:
+        results = tavily.invoke(query)
+        return sanitize_text_for_model(results)
+    except Exception as e:
+        log.exception("search_tavily_error", query=query, error=str(e))
+        return f"Web search failed: {e}. Please inform the user and ask them to try again."
 
 
 @tool(parse_docstring=True)
@@ -230,12 +234,16 @@ def validate_safety_with_rag(itinerary_draft: str, nitrox: bool) -> str:
     """
     log.info("validate_safety_with_rag_called", nitrox=nitrox)
     gas_context = "Nitrox (enriched air)" if nitrox else "Regular air"
-    rag = RAGSystem.get_instance()
-    retrieval_query = (
-        f"Safety-check this dive itinerary for {gas_context}. "
-        f"Itinerary:\n{itinerary_draft}"
-    )
-    retrieved_context = rag.retrieve_context(retrieval_query)
+    try:
+        rag = RAGSystem.get_instance()
+        retrieval_query = (
+            f"Safety-check this dive itinerary for {gas_context}. "
+            f"Itinerary:\n{itinerary_draft}"
+        )
+        retrieved_context = rag.retrieve_context(retrieval_query)
+    except RuntimeError as e:
+        log.exception("validate_safety_rag_error", error=str(e))
+        return f"Safety validation unavailable (RAG error: {e}). Present the draft itinerary to the user as-is."
 
     safety_check_prompt = SAFETY_CHECK_PROMPT.format(
         itinerary_text=itinerary_draft,
@@ -243,11 +251,14 @@ def validate_safety_with_rag(itinerary_draft: str, nitrox: bool) -> str:
         retrieved_context=retrieved_context,
     )
 
-    result = safety_check_llm.invoke(safety_check_prompt)
-    if hasattr(result, "content"):
-        return sanitize_text_for_model(result.content)
-
-    return "Safety validation could not be completed."
+    try:
+        result = safety_check_llm.invoke(safety_check_prompt)
+        if hasattr(result, "content"):
+            return sanitize_text_for_model(result.content)
+        return "Safety validation could not be completed."
+    except Exception as e:
+        log.exception("validate_safety_llm_error", error=str(e))
+        return f"Safety validation failed (LLM error: {e}). Present the draft itinerary to the user as-is."
 
 
 @wrap_model_call
