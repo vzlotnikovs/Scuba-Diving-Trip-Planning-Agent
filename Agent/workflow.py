@@ -1,5 +1,6 @@
 import structlog
 import tenacity
+from ratelimit import limits, sleep_and_retry
 from typing_extensions import TypedDict
 from typing import Dict, Any, Optional, Annotated, Callable
 
@@ -9,6 +10,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
 from langchain.agents import create_agent
 from langchain.tools import tool, ToolRuntime
+from langchain_core.runnables.config import RunnableConfig
 from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
 from langchain_tavily import TavilySearch
 from langgraph.types import Command
@@ -323,3 +325,15 @@ react_graph = create_agent(
     middleware=[enforce_tool_sequence],
     checkpointer=memory,
 )
+
+
+@tenacity.retry(
+    wait=tenacity.wait_exponential(multiplier=1, min=2, max=10),
+    stop=tenacity.stop_after_attempt(3),
+    reraise=True,
+)
+@sleep_and_retry
+@limits(calls=10, period=60)
+def invoke_graph(input_state: dict, config: RunnableConfig) -> dict:
+    """Invoke the graph synchronously and return the final state."""
+    return react_graph.invoke(input_state, config=config)
