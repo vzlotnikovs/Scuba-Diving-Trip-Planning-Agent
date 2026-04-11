@@ -1,14 +1,12 @@
 import structlog
 import tenacity
 from ratelimit import limits, sleep_and_retry
-from typing_extensions import TypedDict
 from typing import Dict, Any, Optional, Annotated, Callable, cast
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import AnyMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph.message import add_messages
-from langchain.agents import create_agent
+from langchain.agents import create_agent, AgentState
 from langchain.tools import tool, ToolRuntime
 from langchain_core.runnables.config import RunnableConfig
 from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
@@ -83,9 +81,9 @@ def scalar_reducer(a: Any, b: Any) -> Any:
     return b if b is not None else a
 
 
-class Trip_Plan_Schema(TypedDict, total=False):
-    """Structured Agent State"""
-    messages: Annotated[list[AnyMessage], add_messages]
+class TripPlannerState(AgentState, total=False):
+    """State schema for trip planning agent, extending LangChain's AgentState (which already has 'messages' field)."""
+
     certified: Annotated[Optional[bool], certified_reducer]
     certification_type: Annotated[Optional[str], scalar_reducer]
     destination: Annotated[Optional[str], scalar_reducer]
@@ -330,7 +328,7 @@ memory = MemorySaver()
 react_agent = create_agent(
     model=plan_trip_llm,
     tools=agent_tools,
-    state_schema=Trip_Plan_Schema,
+    state_schema=TripPlannerState,
     system_prompt=SYSTEM_PROMPT,
     middleware=[enforce_tool_sequence],
     checkpointer=memory,
