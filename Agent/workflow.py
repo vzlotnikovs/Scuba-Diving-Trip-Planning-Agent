@@ -317,7 +317,7 @@ agent_tools = [
 
 memory = MemorySaver()
 
-react_graph = create_agent(
+react_agent = create_agent(
     model=plan_trip_llm,
     tools=agent_tools,
     state_schema=AgentState,
@@ -334,6 +334,7 @@ react_graph = create_agent(
 )
 @sleep_and_retry
 @limits(calls=10, period=60)
-def invoke_graph(input_state: dict, config: RunnableConfig) -> dict:
-    """Invoke the graph synchronously and return the final state."""
-    return react_graph.invoke(input_state, config=config)
+def invoke_react_agent(input_state: dict | None, config: RunnableConfig) -> dict:
+    """Invoke the react agent and return the final state.
+    """
+    return react_agent.invoke(input_state, config=config)
