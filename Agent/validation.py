@@ -13,28 +13,24 @@ log = structlog.get_logger()
 
 def validate_user_text(
     content: str,
-) -> tuple[bool, Optional[str], Optional[str], int, float]:
+) -> tuple[bool, Optional[str], Optional[str]]:
     """Validate and sanitize user input text.
 
     Checks for empty messages, length limits, prompt injection patterns, and
-    topic relevance. Consolidates whitespace and strips the input.
+    consolidates whitespace and strips the input.
 
     Args:
         content (str): The raw text input from the user.
 
     Returns:
-        tuple[bool, Optional[str], Optional[str], int, float]: A tuple containing:
+        A tuple of three values (is_valid, sanitized_content, error_message):
             - is_valid (bool): True if the input passes all checks, False otherwise.
-            - sanitized_content (Optional[str]): The cleaned input string if valid,
-              None if invalid.
-            - error_message (Optional[str]): A descriptive error message if invalid,
-              None if valid.
-            - tokens (int): Total token usage from validation checks (e.g., relevance).
-            - cost (float): Total estimated cost from validation checks.
+            - sanitized_content (Optional[str]): The cleaned string if valid.
+            - error_message (Optional[str]): A descriptive message if invalid.
     """
     if not content or not content.strip():
         log.info("validate_user_text_rejected", reason="empty_message")
-        return False, None, "Empty message. Please try again.", 0, 0.0
+        return False, None, "Empty message. Please try again."
 
     if len(content) > MAX_INPUT_LENGTH:
         log.info(
