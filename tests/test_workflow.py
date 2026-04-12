@@ -18,12 +18,20 @@ from Agent.workflow import (
     search_tavily,
     validate_safety_with_rag,
 )
-from constants import MAX_TRIP_DAYS, MIN_TRIP_DAYS, TRIP_SUMMARY_KEYS
+from constants import MAX_TRIP_DAYS, MIN_TRIP_DAYS
 
 from tests.conftest import make_tool_runtime, tool_message_texts
 
 
 def _override_request(**kwargs: Any) -> MagicMock:
+    """Builds a mock model request carrying a narrowed ``tools`` list.
+
+    Args:
+        **kwargs: Must include ``tools`` assigned onto the returned mock.
+
+    Returns:
+        ``MagicMock`` suitable as the return value of ``req.override``.
+    """
     inner = MagicMock()
     inner.tools = kwargs["tools"]
     return inner
@@ -42,6 +50,13 @@ def _override_request(**kwargs: Any) -> MagicMock:
 def test_certified_reducer(
     a: bool | None, b: bool | None, expected: bool | None
 ) -> None:
+    """Verifies boolean merge semantics for the ``certified`` channel reducer.
+
+    Args:
+        a: Prior certified flag from state.
+        b: Incoming certified flag from an update.
+        expected: Expected merged result.
+    """
     assert certified_reducer(a, b) is expected
 
 
@@ -58,6 +73,13 @@ def test_dict_merge_reducer(
     b: dict[str, Any] | None,
     expected: dict[str, Any] | None,
 ) -> None:
+    """Merges optional dict slices without mutating unrelated keys.
+
+    Args:
+        a: Left-hand summary fragment.
+        b: Right-hand summary fragment.
+        expected: Expected merged mapping.
+    """
     assert dict_merge_reducer(a, b) == expected
 
 
@@ -70,10 +92,18 @@ def test_dict_merge_reducer(
     ],
 )
 def test_scalar_reducer(a: Any, b: Any, expected: Any) -> None:
+    """Prefers the newest non-``None`` scalar when merging annotated state fields.
+
+    Args:
+        a: Existing scalar value.
+        b: Incoming scalar value.
+        expected: Result of ``scalar_reducer``.
+    """
     assert scalar_reducer(a, b) == expected
 
 
 def test_save_trip_summary_updates_destination() -> None:
+    """Persists a destination into both top-level state and nested ``trip_summary``."""
     rt = make_tool_runtime({})
     cmd = save_trip_summary.invoke({"runtime": rt, "destination": "Bali"})
     assert cmd.update["destination"] == "Bali"
@@ -81,10 +111,9 @@ def test_save_trip_summary_updates_destination() -> None:
 
 
 def test_save_trip_summary_invalid_duration_returns_tool_error() -> None:
+    """Returns a tool error message when trip duration is outside allowed bounds."""
     rt = make_tool_runtime({})
-    cmd = save_trip_summary.invoke(
-        {"runtime": rt, "trip_duration": MAX_TRIP_DAYS + 1}
-    )
+    cmd = save_trip_summary.invoke({"runtime": rt, "trip_duration": MAX_TRIP_DAYS + 1})
     texts = tool_message_texts(cmd)
     assert texts
     assert "Invalid trip duration" in texts[0]
@@ -93,15 +122,18 @@ def test_save_trip_summary_invalid_duration_returns_tool_error() -> None:
 
 
 def test_save_trip_summary_not_certified_sets_certified_false() -> None:
+    """Marks ``certified`` false when the user reports no valid certification."""
     rt = make_tool_runtime({})
     cmd = save_trip_summary.invoke({"runtime": rt, "certification_type": "N/A"})
     assert cmd.update["certified"] is False
 
 
 def test_save_trip_summary_all_fields_complete_message() -> None:
-    base = {k: None for k in TRIP_SUMMARY_KEYS}
-    base.update(
+    """Emits the completion hint once all required trip summary keys are populated."""
+    rt = make_tool_runtime({"trip_summary": {}})
+    cmd = save_trip_summary.invoke(
         {
+            "runtime": rt,
             "destination": "Maldives",
             "trip_month": "June",
             "trip_duration": 7,
@@ -109,14 +141,13 @@ def test_save_trip_summary_all_fields_complete_message() -> None:
             "nitrox": True,
         }
     )
-    rt = make_tool_runtime({"trip_summary": {}})
-    cmd = save_trip_summary.invoke({"runtime": rt, **base})
     texts = tool_message_texts(cmd)
     assert any("All 5 required fields are collected" in t for t in texts)
     assert cmd.update.get("trip_duration") == 7
 
 
 def test_disqualify_user_sets_certified_false() -> None:
+    """Forces ``certified`` false and returns a disqualification tool message."""
     rt = make_tool_runtime({})
     cmd = disqualify_user.invoke({"runtime": rt})
     assert cmd.update["certified"] is False
@@ -126,6 +157,11 @@ def test_disqualify_user_sets_certified_false() -> None:
 
 @patch.object(wf, "_invoke_tavily", return_value="search results")
 def test_search_tavily_formats_query_and_sanitizes(mock_invoke: MagicMock) -> None:
+    """Builds a Tavily query string from trip state and forwards it to the invoker.
+
+    Args:
+        mock_invoke: Patched low-level Tavily call used to capture the query text.
+    """
     state = {
         "destination": "Bali",
         "trip_month": "May",
@@ -143,6 +179,11 @@ def test_search_tavily_formats_query_and_sanitizes(mock_invoke: MagicMock) -> No
 
 @patch.object(wf, "_invoke_tavily", side_effect=RuntimeError("network down"))
 def test_search_tavily_handles_invoke_error(_mock: MagicMock) -> None:
+    """Returns a user-facing fallback string when the web search layer raises.
+
+    Args:
+        _mock: Patched Tavily invocation that raises ``RuntimeError``.
+    """
     rt = make_tool_runtime(
         {
             "destination": "X",
@@ -157,7 +198,14 @@ def test_search_tavily_handles_invoke_error(_mock: MagicMock) -> None:
 
 
 @patch.object(wf, "RAGSystem")
-def test_validate_safety_with_rag_rag_failure_returns_fallback(mock_rag: MagicMock) -> None:
+def test_validate_safety_with_rag_rag_failure_returns_fallback(
+    mock_rag: MagicMock,
+) -> None:
+    """Uses a static fallback message when the RAG stack cannot be initialized.
+
+    Args:
+        mock_rag: Patched ``RAGSystem`` accessor that raises during ``get_instance``.
+    """
     mock_rag.get_instance.side_effect = RuntimeError("no index")
     out = validate_safety_with_rag.invoke(
         {"itinerary_draft": "Day 1: shallow dive", "nitrox": False}
@@ -170,6 +218,12 @@ def test_validate_safety_with_rag_rag_failure_returns_fallback(mock_rag: MagicMo
 def test_validate_safety_with_rag_success(
     mock_llm: MagicMock, mock_rag: MagicMock
 ) -> None:
+    """Runs retrieval plus the safety LLM and returns the model's string content.
+
+    Args:
+        mock_llm: Patched safety-check language model.
+        mock_rag: Patched ``RAGSystem`` providing deterministic context text.
+    """
     mock_rag.get_instance.return_value.retrieve_context.return_value = "ctx"
     mock_llm.invoke.return_value = MagicMock(content="Final itinerary text")
 
@@ -181,15 +235,32 @@ def test_validate_safety_with_rag_success(
 
 
 def _tool_mock(tool_name: str) -> MagicMock:
+    """Creates a lightweight stand-in tool object exposing ``name``.
+
+    Args:
+        tool_name: Identifier expected by ``enforce_tool_sequence`` filtering.
+
+    Returns:
+        ``MagicMock`` with ``name`` set to ``tool_name``.
+    """
     m = MagicMock()
     m.name = tool_name
     return m
 
 
 def test_enforce_tool_sequence_disqualified_only_disqualify_tool() -> None:
+    """Leaves only ``disqualify_user`` visible when the diver is not certified."""
     captured: dict[str, Any] = {}
 
     def handler(req: Any) -> Any:
+        """Records ordered tool names then returns a dummy model response.
+
+        Args:
+            req: Model request whose ``tools`` list was filtered by middleware.
+
+        Returns:
+            Placeholder ``MagicMock`` response.
+        """
         captured["tools"] = [getattr(t, "name", None) for t in req.tools]
         return MagicMock()
 
@@ -211,9 +282,18 @@ def test_enforce_tool_sequence_disqualified_only_disqualify_tool() -> None:
 
 
 def test_enforce_tool_sequence_incomplete_summary_limits_tools() -> None:
+    """Exposes summary and disqualify tools until the trip summary is complete."""
     captured: dict[str, Any] = {}
 
     def handler(req: Any) -> Any:
+        """Records sorted tool names exposed after middleware rewriting.
+
+        Args:
+            req: Model request whose ``tools`` list was filtered by middleware.
+
+        Returns:
+            Placeholder ``MagicMock`` response.
+        """
         captured["tools"] = sorted(getattr(t, "name", None) for t in req.tools)
         return MagicMock()
 
@@ -235,9 +315,18 @@ def test_enforce_tool_sequence_incomplete_summary_limits_tools() -> None:
 
 
 def test_enforce_tool_sequence_complete_summary_exposes_all_tools() -> None:
+    """Allows search and RAG tools once every required trip summary field is set."""
     captured: dict[str, Any] = {}
 
     def handler(req: Any) -> Any:
+        """Records sorted tool names when the summary gate is satisfied.
+
+        Args:
+            req: Model request whose ``tools`` list was filtered by middleware.
+
+        Returns:
+            Placeholder ``MagicMock`` response.
+        """
         captured["tools"] = sorted(getattr(t, "name", None) for t in req.tools)
         return MagicMock()
 

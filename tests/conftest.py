@@ -1,12 +1,8 @@
 """Pytest configuration and shared fixtures."""
 
-import os
 import sys
 from pathlib import Path
 from typing import Any
-# RAG_System_Class raises at import time if this is unset.
-os.environ.setdefault("OPENAI_API_KEY", "test-openai-key-for-pytest")
-os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
 
 # Ensure project root is on path so "Agent" and "constants" can be imported
 root = Path(__file__).resolve().parent.parent
