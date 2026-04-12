@@ -20,6 +20,9 @@ from constants import (
     EXPORT_CHAT_BUTTON_LABEL,
     TRIP_SUMMARY_KEYS,
     SUMMARY_DISPLAY,
+    CHAT_INPUT_PLACEHOLDER,
+    NO_CERTIFICATION_MESSAGE,
+    ITINERARY_DELIVERED_MESSAGE,
 )
 
 load_dotenv(dotenv_path=DOTENV_PATH)
@@ -185,11 +188,8 @@ def main() -> None:
     chat_disabled = st.session_state.get("certified") is False
 
     if st.session_state.get("certified") is False:
-        st.info(
-            "Once you have a diving certification, you can use the **New Chat** button on the left to start a new session."
-        )
+        st.info(NO_CERTIFICATION_MESSAGE)
 
-    # Automatically ask for feedback if a full itinerary has been drafted
     is_complete_trip = False
     if st.session_state.get("trip_summary"):
         is_complete_trip = all(
@@ -197,12 +197,10 @@ def main() -> None:
         )
 
     if is_complete_trip and not chat_disabled:
-        st.info(
-            "Does this itinerary meet your expectations? Reply to modify or ask a follow-up question."
-        )
+        st.info(ITINERARY_DELIVERED_MESSAGE)
 
     prompt = st.chat_input(
-        "Describe your desired dive trip, e.g. Trip to Bali in May for 7 days, AOW & Nitrox certified",
+        CHAT_INPUT_PLACEHOLDER,
         key="chat_input",
         disabled=chat_disabled,
     )
@@ -278,7 +276,7 @@ def main() -> None:
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
-                        "content": f"Something went wrong. Please try again. System Error: {str(e)}",
+                        "content": f"Something went wrong. Please try again.",
                     }
                 )
 

@@ -118,6 +118,10 @@ SIDEBAR_TITLE: str = "Current Dive Trip Summary"
 SIDEBAR_INFO: str = "👈 This will get populated as you provide more information"
 EXPORT_CHAT_BUTTON_LABEL: str = "📥 Export Conversation"
 
+CHAT_INPUT_PLACEHOLDER: str = "Describe your desired dive trip, e.g. Trip to Bali in May for 7 days, AOW & Nitrox certified"
+NO_CERTIFICATION_MESSAGE: str = "Once you have a diving certification, you can use the **New Chat** button on the left to start a new session."
+ITINERARY_DELIVERED_MESSAGE: str = "Does this itinerary meet your expectations? Reply to modify or ask a follow-up question."
+
 # Trip summary: keys and sidebar display (icon, label)
 TRIP_SUMMARY_KEYS: tuple = (
     "destination",

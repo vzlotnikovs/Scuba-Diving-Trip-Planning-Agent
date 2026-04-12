@@ -264,7 +264,7 @@ def validate_safety_with_rag(itinerary_draft: str, nitrox: bool) -> str:
         retrieved_context = rag.retrieve_context(retrieval_query)
     except RuntimeError as e:
         log.exception("validate_safety_rag_error", error=str(e))
-        return f"Safety validation unavailable (RAG error: {e}). Present the draft itinerary to the user as-is."
+        return f"Safety validation unavailable (RAG error: {e}). Please try again."
 
     safety_check_prompt = SAFETY_CHECK_PROMPT.format(
         itinerary_text=itinerary_draft,
@@ -279,7 +279,7 @@ def validate_safety_with_rag(itinerary_draft: str, nitrox: bool) -> str:
         return "Safety validation could not be completed."
     except Exception as e:
         log.exception("validate_safety_llm_error", error=str(e))
-        return f"Safety validation failed (LLM error: {e}). Present the draft itinerary to the user as-is."
+        return f"Safety validation failed (LLM error: {e}). Please try again."
 
 
 @wrap_model_call

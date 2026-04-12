@@ -31,7 +31,6 @@ This project can be framed using **Situation**, **Complication**, and **Resoluti
 ## Validations
 - **User Input Validation**: Validates user input to prevent irrelevant requests, inputs that are too long, trips that are too long, prompt injection (using potential patterns), and other misuse of the agent.
 - **Required Information Gathering**: Ensures all the required information is gathered from the user before moving forward. Only certified divers can use the agent.
-- **Dive Safety Rules**: Validates no more than 3 dives per day, mandatory rest days after 3+ dive days, and appropriate fly-dive gaps.
 - **Environment Verification**: Checks OpenAI & Tavily API keys
 
 ## Features
