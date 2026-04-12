@@ -10,7 +10,7 @@ PDF_FILENAME_1: str = "PADI_Enriched_Air_Diver_Notes.pdf"
 PDF_FILENAME_2: str = "DAN_guidelines_for_flying_after_diving.pdf"
 
 # LLM Model
-LLM_MODEL: str = "gpt-5-mini"
+LLM_MODEL: str = "gpt-5.4-mini"
 EMBEDDINGS_MODEL: str = "text-embedding-3-small"
 PLAN_TRIP_TEMPERATURE: float = 0.4
 SAFETY_CHECK_TEMPERATURE: float = 0.1
@@ -69,14 +69,16 @@ Collect exactly 5 fields: Destination, Month, Duration, Certification Type, and 
 Ask explicitly for anything missing. Call `save_trip_summary` progressively whenever
 you learn ANY new information — do not wait until all 5 fields are known.
 
-3. Draft an itinerary:
-Use the `search_tavily` tool to draft an itinerary based on the trip details.
-The itinerary should include dive site names, marine life highlights and/or notable dive features.
-Use bullet points for each day and formatting to improve readability.
-CRITICAL: Hard limit: output must be no more than 400 words.
-Pass the full itinerary text as `itinerary_draft` to the `validate_safety_with_rag` tool.
+3. Research:
+Use the `search_tavily` tool to find relevant information and potential dive sites based on the trip details.
 
-4. Final Output Format:
+4. Draft an itinerary:
+The itinerary should include dive site names, marine life highlights and/or notable dive features.
+Use bullet points and formatting to improve readability.
+CRITICAL: Hard limit: output must be no more than 400 words.
+Pass the draft itinerary text as `itinerary_draft` to the `validate_safety_with_rag` tool.
+
+5. Final Output Format:
 After `validate_safety_with_rag` completes, your response MUST be ONLY the tool output.
 Do NOT add any preface, summary, concluding question, or follow-up suggestions.
 The app renders a trip header — do NOT repeat destination, month, duration, certification, or nitrox details.
@@ -86,17 +88,15 @@ SAFETY_CHECK_PROMPT: str = (
     "You are a dive trip editor who silently verifies that itineraries meet safety standards before finalizing them.\n"
     "You have access to safety guidelines for 'no decompression' limits for both regular air and nitrox, and for flying-after-diving interval rules.\n"
     "Your output is always a complete, finalized itinerary — not a safety report.\n"
-    "Make only the MINIMUM changes needed to fix genuine violations. If the itinerary is already compliant, reproduce it with no changes.\n\n"
-    "The diver is using {gas_context}. Review the itinerary against 'no decompression' limits for {gas_context}, "
-    "depth limits for the diver's certification, and flying-after-diving rules. Then output the finalized itinerary.\n\n"
-    "Reference safety context:\n{retrieved_context}\n\n"
+    "The diver is using {gas_context}. Review the itinerary against the safety guidelines. Then output the finalized itinerary.\n\n"
     "RULES:\n"
-    "1. Output the itinerary as-is unless there is a specific, concrete violation (e.g. too deep, too long, flying interval too short). Do not make changes for generic caution.\n"
-    "2. If a violation exists, fix it with the minimum edit: adjust a depth, reduce dives on a day, or insert a required surface interval.\n"
-    "3. If a flying interval is required (mid-trip or at end), insert it as a single line into the itinerary. Reduce dive sites on that day if needed - do not add days.\n"
-    "4. Do not add Safety sections, risk callouts, or generic advice. Do not mention sunscreen / gear prep / buoyancy checks. \n"
+    "1. Make only the MINIMUM changes needed to fix genuine violations. If the itinerary is already compliant, reproduce it with no changes.\n\n"
+    "2. Avoid generic safety warnings or advice.\n"
+    "3. If a violation exists, fix it with the minimum edit: adjust a depth, reduce dives on a day, or insert a required surface interval.\n"
+    "4. If a flying interval is required (mid-trip or at end), insert it as a single line into the itinerary. Reduce dive sites on that day if needed - do not add days.\n"
     "5. Violations that are fixed should be invisible in the output - just show the corrected plan.\n"
     "Itinerary to review:\n{itinerary_text}\n"
+    "Reference safety context:\n{retrieved_context}\n\n"
 )
 
 # Status Messages & Fallback Responses
