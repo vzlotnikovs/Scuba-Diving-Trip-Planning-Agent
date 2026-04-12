@@ -26,7 +26,6 @@ PERSIST_DIR: str = "./chroma_langchain_db"
 K_CONSTANT: int = 8
 
 
-
 # Validations
 MAX_INPUT_LENGTH: int = 300
 MIN_TRIP_DAYS: int = 1
