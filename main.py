@@ -276,7 +276,7 @@ def main() -> None:
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
-                        "content": f"Something went wrong. Please try again.",
+                        "content": "Something went wrong. Please try again.",
                     }
                 )
 
