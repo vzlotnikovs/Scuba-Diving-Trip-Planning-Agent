@@ -14,6 +14,7 @@ LLM_MODEL: str = "gpt-5.4-mini"
 EMBEDDINGS_MODEL: str = "text-embedding-3-small"
 PLAN_TRIP_TEMPERATURE: float = 0.4
 SAFETY_CHECK_TEMPERATURE: float = 0.1
+MAX_RETRIES: int = 3
 
 # Text splitting
 CHUNK_SIZE: int = 1000
@@ -24,9 +25,7 @@ COLLECTION_NAME: str = "scuba_diving"
 PERSIST_DIR: str = "./chroma_langchain_db"
 K_CONSTANT: int = 8
 
-# RAG Agent
-TIMEOUT: float = 120.0
-MAX_RETRIES: int = 2
+
 
 # Validations
 MAX_INPUT_LENGTH: int = 300
@@ -109,10 +108,10 @@ STATUS_TRIP_VALIDATING: str = (
 )
 
 # Streamlit UI Interface Constants
-PAGE_TITLE_1: str = "Scuba Diving Trip Planning Agent"
-PAGE_TITLE_2: str = "🤿 Scuba Diving Trip Planning Agent"
-PAGE_SUBTITLE: str = "Your smart & safe dive trip planner. Describe your desired dive trip and let the agent plan it for you."
 PAGE_ICON: str = "🤿"
+PAGE_TITLE_1: str = "Scuba Diving Trip Planning Agent"
+PAGE_TITLE_2: str = PAGE_ICON + " " + PAGE_TITLE_1
+PAGE_SUBTITLE: str = "Your smart & safe dive trip planner. Describe your desired dive trip and let the agent plan it for you."
 PAGE_LAYOUT: str = "wide"
 PAGE_INITIAL_SIDEBAR_STATE: str = "expanded"
 

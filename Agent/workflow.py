@@ -29,15 +29,16 @@ from constants import (
     TRIP_SUMMARY_KEYS,
     MIN_TRIP_DAYS,
     MAX_TRIP_DAYS,
+    MAX_RETRIES,
 )
 
 log = structlog.get_logger()
 
 plan_trip_llm = ChatOpenAI(
-    model=LLM_MODEL, temperature=PLAN_TRIP_TEMPERATURE, max_retries=3
+    model=LLM_MODEL, temperature=PLAN_TRIP_TEMPERATURE, max_retries=MAX_RETRIES
 )
 safety_check_llm = ChatOpenAI(
-    model=LLM_MODEL, temperature=SAFETY_CHECK_TEMPERATURE, max_retries=3
+    model=LLM_MODEL, temperature=SAFETY_CHECK_TEMPERATURE, max_retries=MAX_RETRIES
 )
 
 tavily = TavilySearch(

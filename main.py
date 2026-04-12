@@ -1,5 +1,4 @@
 from dotenv import load_dotenv
-from pathlib import Path
 from typing import Optional, cast, Literal
 import streamlit as st
 import json
@@ -9,6 +8,7 @@ from Agent.scuba_diving_trip_planning_agent import scuba_diving_trip_planning_ag
 from Agent.PDF_export import create_pdf_chat
 import structlog
 from constants import (
+    DOTENV_PATH,
     PAGE_TITLE_1,
     PAGE_TITLE_2,
     PAGE_SUBTITLE,
@@ -22,7 +22,7 @@ from constants import (
     SUMMARY_DISPLAY,
 )
 
-load_dotenv(dotenv_path=Path(__file__).parent / "keys.env")
+load_dotenv(dotenv_path=DOTENV_PATH)
 
 structlog.configure(
     processors=[
