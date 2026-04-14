@@ -114,7 +114,7 @@ def save_trip_summary(
     Args:
         destination: The dive trip destination (e.g. 'Maldives', 'Great Barrier Reef').
         trip_month: The month of the planned trip (e.g. 'June', 'October').
-        trip_duration: The length of the trip in whole days (must be between 1 and 14).
+        trip_duration: The length of the trip in whole days (must be validated by the `validate_trip_duration` tool).
         certification_type: The diver's certification level (e.g. 'Open Water', 'AOW',
             'Divemaster'). Use 'None' or 'N/a' if the user is not certified.
         nitrox: Whether the diver will use Nitrox (enriched air). True for Nitrox,
@@ -197,7 +197,7 @@ def disqualify_user(runtime: ToolRuntime) -> Command:
             "certified": False,
             "messages": [
                 ToolMessage(
-                    content="User has been permanently disqualified. CRITICAL INSTRUCTION: Your final response MUST ONLY be: 'I am afraid I cannot plan or book scuba dives for someone who isn't certified.' Do NOT offer any alternatives, explanations, or next steps. Say exactly and only that.",
+                    content="User has been permanently disqualified. CRITICAL INSTRUCTION: Your final response MUST ONLY be: 'I am afraid I cannot plan or book scuba dives for someone who isn't certified.' Do NOT offer any alternatives, explanations, or next steps.",
                     tool_call_id=runtime.tool_call_id,
                 )
             ],
