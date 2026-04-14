@@ -25,4 +25,5 @@ dependencies = [
     "structlog>=25.5.0",
     "tenacity>=9.1.4",
     "types-ratelimit>=2.2.0.20250501",
+    "types-reportlab>=4.4.10.20260408",
 ]
