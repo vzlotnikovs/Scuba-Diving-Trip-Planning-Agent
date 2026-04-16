@@ -269,10 +269,9 @@ def main() -> None:
                 log.exception(
                     "agent_error",
                     thread_id=st.session_state.thread_id,
+                    error_type=type(e).__name__,
                 )
-                st.error(
-                    f"Something went wrong. Please try again. System Error: {str(e)}"
-                )
+                st.error("Something went wrong. Please try again.")
                 st.session_state.messages.append(
                     {
                         "role": "assistant",

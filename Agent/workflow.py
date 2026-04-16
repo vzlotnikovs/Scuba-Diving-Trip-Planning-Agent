@@ -14,8 +14,13 @@ from langchain_tavily import TavilySearch
 from langgraph.types import Command
 
 from Agent.RAG_System_Class import RAGSystem
-from Agent.validation import validate_trip_duration, sanitize_text_for_model
+from Agent.validation import (
+    parse_certification_type,
+    sanitize_text_for_model,
+    validate_trip_duration,
+)
 from constants import (
+    CERTIFICATION_UNRECOGNIZED_TOOL_MESSAGE,
     LLM_MODEL,
     PLAN_TRIP_TEMPERATURE,
     SAFETY_CHECK_TEMPERATURE,
@@ -109,7 +114,8 @@ def save_trip_summary(
     you learn ANY new information — you do not need all fields at once.
     If certification_type indicates the user is not certified (e.g. 'None', 'N/a',
     'Never dived'), this tool will automatically disqualify them — do NOT also
-    call `disqualify_user`.
+    call `disqualify_user`. Unrecognized or nonsense values return an error and
+    do not update state — ask the user again for a standard agency level.
 
     Args:
         destination: The dive trip destination (e.g. 'Maldives', 'Great Barrier Reef').
@@ -144,12 +150,24 @@ def save_trip_summary(
             )
 
     if certification_type is not None:
-        update_dict["certification_type"] = certification_type
-        cert_lower = str(certification_type).strip().lower()
-        if cert_lower in ("not certified", "none", "n/a", ""):
-            update_dict["certified"] = False
-        else:
-            update_dict["certified"] = True
+        cert_status, cert_stored = parse_certification_type(certification_type)
+        if cert_status == "unrecognized":
+            log.info(
+                "save_trip_summary_certification_rejected",
+                raw_preview=str(certification_type)[:80],
+            )
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=CERTIFICATION_UNRECOGNIZED_TOOL_MESSAGE,
+                            tool_call_id=runtime.tool_call_id,
+                        )
+                    ]
+                }
+            )
+        update_dict["certification_type"] = cert_stored
+        update_dict["certified"] = cert_status == "certified"
 
     if nitrox is not None:
         update_dict["nitrox"] = nitrox

@@ -1,11 +1,16 @@
 import re
 import structlog
-from typing import Optional, Any
+from typing import Any, Literal, Optional
+
 from constants import (
-    MAX_INPUT_LENGTH,
+    CERTIFICATION_NOT_CERTIFIED_EXACT,
+    CERTIFICATION_NOT_CERTIFIED_SUBSTRINGS,
+    CERTIFICATION_PROFILES,
+    CERTIFICATION_SINGLE_TOKEN_TO_CANONICAL,
     INJECTION_PATTERNS,
-    MIN_TRIP_DAYS,
+    MAX_INPUT_LENGTH,
     MAX_TRIP_DAYS,
+    MIN_TRIP_DAYS,
 )
 
 log = structlog.get_logger()
@@ -59,6 +64,39 @@ def validate_user_text(
             )
 
     return True, sanitized, None
+
+
+def _normalize_certification_input(raw: str) -> str:
+    """Lowercase, strip, and collapse internal whitespace for allowlist matching."""
+    s = str(raw).strip().lower()
+    return re.sub(r"\s+", " ", s)
+
+
+def parse_certification_type(
+    raw: str,
+) -> tuple[Literal["certified", "not_certified", "unrecognized"], Optional[str]]:
+    """Classify a user or model-provided certification string for persistence.
+
+    Returns:
+        A pair ``(status, value)`` where ``value`` is the canonical label to store
+        for ``certified`` / ``not_certified``, or ``None`` when ``status`` is
+        ``unrecognized`` (do not update state).
+    """
+    norm = _normalize_certification_input(raw)
+    if norm in CERTIFICATION_NOT_CERTIFIED_EXACT:
+        return "not_certified", "Not certified"
+    for sub in CERTIFICATION_NOT_CERTIFIED_SUBSTRINGS:
+        if sub in norm:
+            return "not_certified", "Not certified"
+    for canonical, needles in CERTIFICATION_PROFILES:
+        if any(n in norm for n in needles):
+            return "certified", canonical
+    for t in norm.split():
+        if t in CERTIFICATION_SINGLE_TOKEN_TO_CANONICAL:
+            return "certified", CERTIFICATION_SINGLE_TOKEN_TO_CANONICAL[t]
+    if norm in CERTIFICATION_SINGLE_TOKEN_TO_CANONICAL:
+        return "certified", CERTIFICATION_SINGLE_TOKEN_TO_CANONICAL[norm]
+    return "unrecognized", None
 
 
 def validate_trip_duration(days: Optional[int]) -> bool:

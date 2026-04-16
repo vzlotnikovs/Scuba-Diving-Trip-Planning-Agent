@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 DOTENV_PATH: Path = Path(__file__).resolve().parent / "keys.env"
 USER_AGENT: str = "Scuba Diving Agent"
@@ -37,6 +37,101 @@ INJECTION_PATTERNS: List[str] = [
     r"<\|.*?\|>",
 ]
 
+# Certification allowlist (normalized lowercase, collapsed whitespace)
+CERTIFICATION_NOT_CERTIFIED_EXACT: frozenset[str] = frozenset(
+    {
+        "",
+        "none",
+        "no",
+        "nope",
+        "n/a",
+        "na",
+        "n a",
+        "not certified",
+        "uncertified",
+        "non certified",
+        "non-certified",
+        "no certification",
+        "no cert",
+        "not cert",
+        "never certified",
+        "not a diver",
+        "non diver",
+        "non-diver",
+        "nondiver",
+        "snorkel",
+        "snorkel only",
+        "student",
+        "try dive",
+        "try scuba",
+        "discover scuba",
+        "never dived",
+        "never dove",
+        "novice",
+        "uncertified diver",
+    }
+)
+
+CERTIFICATION_NOT_CERTIFIED_SUBSTRINGS: Tuple[str, ...] = (
+    "never been certified",
+    "don't have a cert",
+    "dont have a cert",
+    "do not have a cert",
+    "no diving certification",
+    "havent been certified",
+    "haven't been certified",
+    "not yet certified",
+    "working toward certification",
+    "not a diver",
+    "not a scuba diver",
+    "i'm not certified",
+    "im not certified",
+    "i am not certified",
+)
+
+# (canonical label for state/UI, substrings checked against normalized text — most specific first)
+CERTIFICATION_PROFILES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("Course Director", ("course director", "master instructor")),
+    ("Assistant Instructor", ("assistant instructor",)),
+    ("Divemaster", ("divemaster", "dive master")),
+    ("Master Scuba Diver", ("master scuba diver", "msd")),
+    ("Rescue Diver", ("rescue diver", "rescue certification")),
+    (
+        "Advanced Open Water",
+        (
+            "advanced open water",
+            "aow",
+            "adv open water",
+            "advanced ow",
+            "adv. open water",
+            "a o w",
+        ),
+    ),
+    (
+        "Open Water",
+        (
+            "open water",
+            "openwater",
+            "ow",
+            "o w",
+        ),
+    ),
+    (
+        "Enriched Air / Nitrox Diver",
+        ("enriched air diver", "nitrox diver", "eanx diver"),
+    ),
+)
+
+# Single-token or short agency-style answers (normalized space-split tokens)
+CERTIFICATION_SINGLE_TOKEN_TO_CANONICAL: dict[str, str] = {
+    "ow": "Open Water",
+    "aow": "Advanced Open Water",
+    "dm": "Divemaster",
+    "msd": "Master Scuba Diver",
+}
+
+CERTIFICATION_UNRECOGNIZED_TOOL_MESSAGE: str = "Error: Certification level not recognized. Ask the user for a standard recreational scuba certification. Do not save a guess; wait until they provide a clear, recognized level."
+
 # Tavily Search Settings
 TAVILY_SEARCH_TEMPERATURE: float = 0.3
 TAVILY_SEARCH_MAX_RESULTS: int = 5
@@ -51,11 +146,11 @@ SYSTEM_PROMPT: str = (
     "0. Relevance: Assist ONLY with scuba diving trip planning. If a user's topic is completely unrelated (e.g., general weather, sightseeing, unrelated activities), politely redirect them. CRITICAL: Do NOT reject short, direct answers to your own questions (e.g., 'None', 'Yes', '7 days', 'Bali'). These are valid trip detail responses — treat them as such.\n"
     "1. Certification: Whenever the user provides NEW information, CHECK if they are certified. Valid certification types: Open Water (OW), Advanced Open Water (AOW), Rescue Diver, Divemaster (DM), Instructor, and common abbreviations thereof. Do NOT reveal valid certification types to the user. Politely reject implausible or fictional certification types and ask for a valid one.\n"
     "2. Information Collection: Collect EXACTLY 5 fields: Destination, Month, Duration, Certification Type, and Nitrox. Ask explicitly for anything missing. Call `save_trip_summary` progressively whenever you learn ANY new information — do not wait until all 5 fields are known.\n"
-    "3. Validation: Validate the trip duration using the `validate_trip_duration` tool. If the trip duration is invalid, politely ask the user to adjust it. If the trip duration is valid, proceed to the next step.\n"
+    "3. Validation: Validate the trip duration using the `save_trip_summary` tool. If the trip duration is invalid, politely ask the user to adjust it. If the trip duration is valid, proceed to the next step.\n"
     "4. Research: Use the `search_tavily` tool to find relevant information and potential dive sites based on the trip details.\n"
     "5. Draft an itinerary: The itinerary should include dive site names, marine life highlights and/or notable dive features. Use bullet points and formatting to improve readability. CRITICAL: Hard limit: output must be no more than 400 words. Pass the draft itinerary text as `itinerary_draft` to the `validate_safety_with_rag` tool.\n"
-    "6. Final Output Format: After `validate_safety_with_rag` completes, your response MUST be ONLY the tool output. Do NOT add any preface, summary, concluding question, or follow-up suggestions. The app renders a trip header — do NOT repeat destination, month, duration, certification, or nitrox details."
-    "7. Amendment: if the user asks for amendments to the itinerary, follow the above instructions."
+    "6. Final Output Format: After `validate_safety_with_rag` completes, your response MUST be ONLY the tool output. Do NOT add any preface, summary, concluding question, or follow-up suggestions. The app renders a trip header — do NOT repeat destination, month, duration, certification, or nitrox details.\n"
+    "7. Amendment: if the user asks for amendments to the itinerary, follow the above instructions.\n"
 )
 
 SAFETY_CHECK_PROMPT: str = (

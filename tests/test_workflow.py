@@ -126,6 +126,34 @@ def test_save_trip_summary_not_certified_sets_certified_false() -> None:
     rt = make_tool_runtime({})
     cmd = save_trip_summary.invoke({"runtime": rt, "certification_type": "N/A"})
     assert cmd.update["certified"] is False
+    assert cmd.update["certification_type"] == "Not certified"
+
+
+def test_save_trip_summary_unrecognized_certification_returns_tool_error() -> None:
+    """Rejects unknown certification strings without persisting them to state."""
+    rt = make_tool_runtime(
+        {
+            "trip_summary": {
+                "destination": "Bali",
+                "certification_type": "Open Water",
+            }
+        }
+    )
+    cmd = save_trip_summary.invoke(
+        {"runtime": rt, "certification_type": "asdfnotacertlevel"}
+    )
+    texts = tool_message_texts(cmd)
+    assert texts
+    assert "not recognized" in texts[0].lower()
+    assert "certification_type" not in cmd.update
+
+
+def test_save_trip_summary_canonicalizes_certification() -> None:
+    """Maps common shorthand to a canonical certification label."""
+    rt = make_tool_runtime({})
+    cmd = save_trip_summary.invoke({"runtime": rt, "certification_type": "  aow  "})
+    assert cmd.update["certified"] is True
+    assert cmd.update["certification_type"] == "Advanced Open Water"
 
 
 def test_save_trip_summary_all_fields_complete_message() -> None:
@@ -144,6 +172,7 @@ def test_save_trip_summary_all_fields_complete_message() -> None:
     texts = tool_message_texts(cmd)
     assert any("All 5 required fields are collected" in t for t in texts)
     assert cmd.update.get("trip_duration") == 7
+    assert cmd.update.get("certification_type") == "Advanced Open Water"
 
 
 def test_disqualify_user_sets_certified_false() -> None:

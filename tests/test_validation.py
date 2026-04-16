@@ -3,6 +3,7 @@
 import pytest
 
 from Agent.validation import (
+    parse_certification_type,
     sanitize_text_for_model,
     validate_trip_duration,
     validate_user_text,
@@ -94,6 +95,31 @@ def test_validate_trip_duration(days: int | None, expected: bool) -> None:
 def test_validate_trip_duration_non_int() -> None:
     """Rejects non-integer values passed where an int day count is required."""
     assert validate_trip_duration("5") is False  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_status", "expected_value"),
+    [
+        ("N/A", "not_certified", "Not certified"),
+        ("none", "not_certified", "Not certified"),
+        ("never dived", "not_certified", "Not certified"),
+        ("i'm not certified yet", "not_certified", "Not certified"),
+        ("Open Water", "certified", "Open Water"),
+        ("PADI Advanced Open Water", "certified", "Advanced Open Water"),
+        ("  aow  ", "certified", "Advanced Open Water"),
+        ("dm", "certified", "Divemaster"),
+        ("xyz fake cert 123", "unrecognized", None),
+    ],
+)
+def test_parse_certification_type(
+    raw: str,
+    expected_status: str,
+    expected_value: str | None,
+) -> None:
+    """Maps free-text certification answers to stored status and canonical labels."""
+    status, value = parse_certification_type(raw)
+    assert status == expected_status
+    assert value == expected_value
 
 
 @pytest.mark.parametrize(
