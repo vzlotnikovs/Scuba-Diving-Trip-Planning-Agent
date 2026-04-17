@@ -37,7 +37,7 @@ INJECTION_PATTERNS: List[str] = [
     r"<\|.*?\|>",
 ]
 
-# Certification allowlist (normalized lowercase, collapsed whitespace)
+# Allowed Certifications & Not Certified Strings
 CERTIFICATION_NOT_CERTIFIED_EXACT: frozenset[str] = frozenset(
     {
         "",
@@ -89,7 +89,6 @@ CERTIFICATION_NOT_CERTIFIED_SUBSTRINGS: Tuple[str, ...] = (
     "i am not certified",
 )
 
-# (canonical label for state/UI, substrings checked against normalized text — most specific first)
 CERTIFICATION_PROFILES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Course Director", ("course director", "master instructor")),
     ("Assistant Instructor", ("assistant instructor",)),
@@ -122,7 +121,6 @@ CERTIFICATION_PROFILES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ),
 )
 
-# Single-token or short agency-style answers (normalized space-split tokens)
 CERTIFICATION_SINGLE_TOKEN_TO_CANONICAL: dict[str, str] = {
     "ow": "Open Water",
     "aow": "Advanced Open Water",
@@ -148,22 +146,23 @@ SYSTEM_PROMPT: str = (
     "2. Information Collection: Collect EXACTLY 5 fields: Destination, Month, Duration, Certification Type, and Nitrox. Ask explicitly for anything missing. Call `save_trip_summary` progressively whenever you learn ANY new information — do not wait until all 5 fields are known.\n"
     "3. Validation: Validate the trip duration using the `save_trip_summary` tool. If the trip duration is invalid, politely ask the user to adjust it. If the trip duration is valid, proceed to the next step.\n"
     "4. Research: Use the `search_tavily` tool to find relevant information and potential dive sites based on the trip details.\n"
-    "5. Draft an itinerary: The itinerary should include dive site names, marine life highlights and/or notable dive features. Use bullet points and formatting to improve readability. CRITICAL: Hard limit: output must be no more than 400 words. Pass the draft itinerary text as `itinerary_draft` to the `validate_safety_with_rag` tool.\n"
-    "6. Final Output Format: After `validate_safety_with_rag` completes, your response MUST be ONLY the tool output. Do NOT add any preface, summary, concluding question, or follow-up suggestions. The app renders a trip header — do NOT repeat destination, month, duration, certification, or nitrox details.\n"
-    "7. Amendment: if the user asks for amendments to the itinerary, follow the above instructions.\n"
+    "5. Draft an itinerary: The itinerary should include dive site names, marine life highlights and/or notable dive site features. Use bullet points. Hard limit: output must be no more than 400 words.\n"
+    "6. Pass the draft itinerary text as `itinerary_draft` to the `validate_safety_with_rag` tool.\n"
+    "7. Final Output Format: After `validate_safety_with_rag` completes, your response MUST be ONLY the tool output. Do NOT add any preface, summary, concluding question, or follow-up suggestions. The app renders a trip header — do NOT repeat destination, month, duration, certification, or nitrox details.\n"
+    "8. Amendment: if the user asks for amendments to the itinerary, follow the above instructions.\n"
 )
 
 SAFETY_CHECK_PROMPT: str = (
     "You are a dive trip editor who silently verifies that itineraries meet safety standards before finalizing them.\n"
     "You have access to safety guidelines for 'no decompression' limits for both regular air and nitrox, and for flying-after-diving interval rules.\n"
-    "Your output is always a complete, finalized itinerary — not a safety report.\n"
+    "Your output is always a complete, finalized itinerary — NOT a safety report.\n"
     "The diver is using {gas_context}. Review the itinerary against the safety guidelines. Then output the finalized itinerary.\n\n"
     "RULES:\n"
-    "1. Make only the MINIMUM changes needed to fix genuine violations. If the itinerary is already compliant, reproduce it with no changes.\n\n"
-    "2. Avoid generic safety warnings or advice.\n"
-    "3. If a violation exists, fix it with the minimum edit: adjust a depth, reduce dives on a day, or insert a required surface interval.\n"
-    "4. If a flying interval is required (mid-trip or at end), insert it as a single line into the itinerary. Reduce dive sites on that day if needed - do not add days.\n"
-    "5. Violations that are fixed should be invisible in the output - just show the corrected plan.\n"
+    "1. Avoid generic safety warnings or advice. Do NOT say 'use a conservative profile' or 'stay within [XYZ] limits'. Only focus on genuine safety violations.\n"
+    "2. If a safety violation exists, fix it with the MINIMUM edit: adjust dive depth, reduce number of dives per day, or insert a required surface interval.\n"
+    "3. If a flying interval is required (mid-trip or at end), insert it as a single line into the itinerary. Reduce dive sites on that day if needed - do not add days.\n"
+    "4. Violations that are fixed should be invisible in the output - just show the corrected bullet points.\n"
+    "5. If the original text is already compliant, reproduce it with no changes.\n\n"
     "Itinerary to review:\n{itinerary_text}\n"
     "Reference safety context:\n{retrieved_context}\n\n"
 )
