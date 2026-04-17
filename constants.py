@@ -168,7 +168,7 @@ SAFETY_CHECK_PROMPT: str = (
     "The diver is using {gas_context}. Review the itinerary against the safety guidelines. Then output the finalized itinerary.\n\n"
     "RULES:\n"
     "1. AVOID generic safety advice. Do NOT use phrases like 'conservative', 'ample', 'stay within limits', 'maintain safe', etc.\n"
-    "2. Focus on GENUINE safety violations such as diving too deep, diving too many times per day, or not allowing enough surface interval between dives.\n"
+    "2. Focus on GENUINE safety violations such as diving too deep or not allowing enough surface interval between dives.\n"
     "3. If a safety violation exists, FIX IT with MINIMUM edits: remove sites that are too deep, reduce number of dives per day, or insert a required surface interval.\n"
     "4. If a flying interval is required (mid-trip or at end), insert it as a single line into the itinerary. Reduce dive sites on that day if needed - do not add days.\n"
     "5. If some or all of the itinerary is already safe, reproduce it with no changes.\n\n"
