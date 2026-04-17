@@ -1,6 +1,6 @@
 import re
 import structlog
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Dict
 
 from constants import (
     CERTIFICATION_NOT_CERTIFIED_EXACT,
@@ -11,6 +11,8 @@ from constants import (
     MAX_INPUT_LENGTH,
     MAX_TRIP_DAYS,
     MIN_TRIP_DAYS,
+    TRIP_SUMMARY_KEYS,
+    PLACEHOLDER_VALUES,
 )
 
 log = structlog.get_logger()
@@ -117,3 +119,16 @@ def sanitize_text_for_model(value: Any) -> str:
     """Coerce text into JSON-safe UTF-8 before passing back into model messages."""
     text = value if isinstance(value, str) else str(value)
     return text.encode("utf-8", "ignore").decode("utf-8")
+
+
+def check_all_trip_details_collected(summary: Dict[str, Any]) -> bool:
+    """Helper to verify all 5 data points are genuinely collected and not 'unknown' or empty."""
+    for key in TRIP_SUMMARY_KEYS:
+        val = summary.get(key)
+        if val is None:
+            return False
+        if isinstance(val, str):
+            val_clean = val.strip().lower()
+            if not val_clean or val_clean in PLACEHOLDER_VALUES:
+                return False
+    return True

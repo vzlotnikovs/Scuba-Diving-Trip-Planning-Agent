@@ -36,6 +36,15 @@ INJECTION_PATTERNS: List[str] = [
     r"system\s*:\s*",
     r"<\|.*?\|>",
 ]
+PLACEHOLDER_VALUES: List[str] = [
+    "none",
+    "n/a",
+    "unknown",
+    "any",
+    "tbd",
+    "tbc",
+    "not specified",
+]
 
 # Allowed Certifications & Not Certified Strings
 CERTIFICATION_NOT_CERTIFIED_EXACT: frozenset[str] = frozenset(

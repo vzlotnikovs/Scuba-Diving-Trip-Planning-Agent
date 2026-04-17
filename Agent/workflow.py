@@ -18,6 +18,7 @@ from Agent.validation import (
     parse_certification_type,
     sanitize_text_for_model,
     validate_trip_duration,
+    check_all_trip_details_collected,
 )
 from constants import (
     CERTIFICATION_UNRECOGNIZED_TOOL_MESSAGE,
@@ -180,7 +181,7 @@ def save_trip_summary(
 
     update_dict["trip_summary"] = new_summary
 
-    is_complete = all(new_summary.get(k) is not None for k in TRIP_SUMMARY_KEYS)
+    is_complete = check_all_trip_details_collected(new_summary)
     if is_complete:
         success_msg = (
             f"Successfully updated trip details. All 5 required fields are collected: {new_summary}. "
@@ -310,11 +311,7 @@ def enforce_tool_sequence(
     raw_summary = state.get("trip_summary")
     summary: Dict[str, Any] = raw_summary if isinstance(raw_summary, dict) else {}
 
-    is_complete = True
-    for key in TRIP_SUMMARY_KEYS:
-        if summary.get(key) is None:
-            is_complete = False
-            break
+    is_complete = check_all_trip_details_collected(summary)
 
     if state.get("certified") is False:
         visible_tools = ["disqualify_user"]
