@@ -10,7 +10,7 @@ PDF_FILENAME_1: str = "PADI_Enriched_Air_Diver_Notes.pdf"
 PDF_FILENAME_2: str = "DAN_guidelines_for_flying_after_diving.pdf"
 
 # LLM Model
-LLM_MODEL: str = "gpt-5.4-mini"
+LLM_MODEL: str = "gpt-5.4"
 EMBEDDINGS_MODEL: str = "text-embedding-3-small"
 PLAN_TRIP_TEMPERATURE: float = 0.4
 SAFETY_CHECK_TEMPERATURE: float = 0.1

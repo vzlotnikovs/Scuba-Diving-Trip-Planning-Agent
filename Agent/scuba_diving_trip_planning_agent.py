@@ -202,7 +202,7 @@ def scuba_diving_trip_planning_agent(
 
     if done_full_response and cb.total_tokens > 0:
         done_full_response += (
-            f"\n\n_Tokens: {cb.total_tokens} | Cost: ${cb.total_cost:.4f}_"
+            f"\n\n_Input Tokens: {cb.prompt_tokens} | Output Tokens: {cb.completion_tokens} | Total Tokens: {cb.total_tokens}_"
         )
 
     yield ("done", done_full_response, trip_summary, certified)
