@@ -3,7 +3,7 @@ name = "vzlotn-ae-cap-1-1"
 version = "0.1.0"
 description = "Scuba Diving Trip Planning Agent"
 readme = "README.md"
-requires-python = "==3.11"
+requires-python = ">=3.11"
 dependencies = [
     "langchain>=1.2.10",
     "langchain-chroma>=1.1.0",
