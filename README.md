@@ -1,3 +1,5 @@
+Turing College AI Engineering Sprint 3 (Building with AI Agents) Capstone Project
+
 # Scuba Diving Trip Planning Agent
 
 - **Purpose**: The Scuba Diving Trip Planning Agent helps create diving trip itineraries that are both enjoyable and safe.
